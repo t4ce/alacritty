@@ -16,8 +16,8 @@ use glutin::display::GetGlDisplay;
 use glutin::platform::x11::X11GlConfigExt;
 use log::info;
 use serde_json as json;
-use winit::event::{Event as WinitEvent, Modifiers, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::event::{Modifiers, WindowEvent};
+use winit::event_loop::ActiveEventLoop;
 use winit::raw_window_handle::HasDisplayHandle;
 use winit::window::WindowId;
 
@@ -36,7 +36,8 @@ use crate::config::UiConfig;
 use crate::display::Display;
 use crate::display::window::Window;
 use crate::event::{
-    ActionContext, Event, EventProxy, InlineSearchState, Mouse, SearchState, TouchPurpose,
+    ActionContext, Event, EventLoopProxy, EventProxy, InlineSearchState, Mouse, SearchState,
+    TouchPurpose, WinitEvent,
 };
 #[cfg(unix)]
 use crate::logging::LOG_TARGET_IPC_CONFIG;
@@ -49,7 +50,7 @@ pub struct WindowContext {
     pub message_buffer: MessageBuffer,
     pub display: Display,
     pub dirty: bool,
-    event_queue: Vec<WinitEvent<Event>>,
+    event_queue: Vec<WinitEvent>,
     terminal: Arc<FairMutex<Term<EventProxy>>>,
     cursor_blink_timed_out: bool,
     prev_bell_cmd: Option<Instant>,
@@ -73,7 +74,7 @@ impl WindowContext {
     /// Create initial window context that does bootstrapping the graphics API we're going to use.
     pub fn initial(
         event_loop: &dyn ActiveEventLoop,
-        proxy: EventLoopProxy<Event>,
+        proxy: EventLoopProxy,
         config: Rc<UiConfig>,
         mut options: WindowOptions,
     ) -> Result<Self, Box<dyn Error>> {
@@ -122,7 +123,7 @@ impl WindowContext {
     pub fn additional(
         gl_config: &GlutinConfig,
         event_loop: &dyn ActiveEventLoop,
-        proxy: EventLoopProxy<Event>,
+        proxy: EventLoopProxy,
         config: Rc<UiConfig>,
         mut options: WindowOptions,
         config_overrides: ParsedOptions,
@@ -170,7 +171,7 @@ impl WindowContext {
         display: Display,
         config: Rc<UiConfig>,
         options: WindowOptions,
-        proxy: EventLoopProxy<Event>,
+        proxy: EventLoopProxy,
     ) -> Result<Self, Box<dyn Error>> {
         let mut pty_config = config.pty_config();
         options.terminal_options.override_pty_config(&mut pty_config);
@@ -402,10 +403,10 @@ impl WindowContext {
     pub fn handle_event(
         &mut self,
         #[cfg(target_os = "macos")] event_loop: &dyn ActiveEventLoop,
-        event_proxy: &EventLoopProxy<Event>,
+        event_proxy: &EventLoopProxy,
         clipboard: &mut Clipboard,
         scheduler: &mut Scheduler,
-        event: WinitEvent<Event>,
+        event: WinitEvent,
     ) {
         match event {
             WinitEvent::AboutToWait
