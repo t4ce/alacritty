@@ -1,6 +1,6 @@
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", target_os = "trueos", windows)))]
 use winit::platform::startup_notify::{self, EventLoopExtStartupNotify};
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", target_os = "trueos", windows)))]
 use winit::window::ActivationToken;
 
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
@@ -159,14 +159,14 @@ impl Window {
                 .with_position(PhysicalPosition::<i32>::from((position.x, position.y)));
         }
 
-        #[cfg(not(any(target_os = "macos", windows)))]
+        #[cfg(not(any(target_os = "macos", target_os = "trueos", windows)))]
         let activation_token = options
             .activation_token
             .take()
             .map(ActivationToken::from_raw)
             .or_else(|| event_loop.read_token_from_env());
 
-        #[cfg(not(any(target_os = "macos", windows)))]
+        #[cfg(not(any(target_os = "macos", target_os = "trueos", windows)))]
         if let Some(token) = activation_token.as_ref() {
             log::debug!("Activating window with token: {token:?}");
             startup_notify::reset_activation_token_env();

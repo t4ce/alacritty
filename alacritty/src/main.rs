@@ -9,8 +9,14 @@
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
 #![windows_subsystem = "windows"]
 
-#[cfg(not(any(feature = "x11", feature = "wayland", target_os = "macos", windows)))]
-compile_error!(r#"at least one of the "x11"/"wayland" features must be enabled"#);
+#[cfg(not(any(
+    feature = "x11",
+    feature = "wayland",
+    target_os = "macos",
+    target_os = "trueos",
+    windows,
+)))]
+compile_error!(r#"at least one window-system backend must be enabled"#);
 
 use std::error::Error;
 use std::fmt::Write as _;
@@ -94,7 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 #[cfg(unix)]
 #[allow(unused_mut)]
 fn msg(mut options: MessageOptions) -> Result<(), Box<dyn Error>> {
-    #[cfg(not(any(target_os = "macos", windows)))]
+    #[cfg(not(any(target_os = "macos", target_os = "trueos", windows)))]
     if let SocketMessage::CreateWindow(window_options) = &mut options.message {
         window_options.activation_token =
             env::var("XDG_ACTIVATION_TOKEN").or_else(|_| env::var("DESKTOP_STARTUP_ID")).ok();
@@ -144,7 +150,10 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
     info!("Welcome to Alacritty");
     info!("Version {}", env!("VERSION"));
 
-    #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+    #[cfg(all(
+        feature = "x11",
+        not(any(target_os = "macos", target_os = "trueos", windows)),
+    ))]
     info!(
         "Running on {}",
         if matches!(
@@ -156,7 +165,14 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
             "X11"
         }
     );
-    #[cfg(not(any(feature = "x11", target_os = "macos", windows)))]
+    #[cfg(target_os = "trueos")]
+    info!("Running on TRUEOS");
+    #[cfg(not(any(
+        feature = "x11",
+        target_os = "macos",
+        target_os = "trueos",
+        windows,
+    )))]
     info!("Running on Wayland");
 
     // Load configuration file.
