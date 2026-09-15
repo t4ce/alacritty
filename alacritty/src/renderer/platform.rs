@@ -42,7 +42,14 @@ pub fn create_gl_display(
         DisplayApiPreference::GlxThenEgl(Box::new(x11::register_xlib_error_hook))
     };
 
-    #[cfg(all(not(feature = "x11"), not(any(target_os = "macos", windows))))]
+    #[cfg(target_os = "trueos")]
+    let preference = DisplayApiPreference::TrueOs;
+
+    #[cfg(all(
+        not(feature = "x11"),
+        not(target_os = "trueos"),
+        not(any(target_os = "macos", windows))
+    ))]
     let preference = DisplayApiPreference::Egl;
 
     let display = unsafe { Display::new(raw_display_handle, preference)? };
