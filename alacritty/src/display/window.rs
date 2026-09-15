@@ -33,7 +33,7 @@ use winit::monitor::Fullscreen;
 use winit::monitor::MonitorHandle;
 #[cfg(windows)]
 use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
-use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle, XlibWindowHandle};
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::{
     ImePurpose, Theme, UserAttentionType, Window as WinitWindow, WindowAttributes, WindowId,
 };

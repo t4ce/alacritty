@@ -29,7 +29,7 @@ use log::{debug, error, info, warn};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalPosition;
 use winit::event::{
-    ButtonSource, ElementState, Ime, Modifiers, MouseButton, PointerKind, PointerSource,
+    ButtonSource, ElementState, Ime, Modifiers, MouseButton, PointerSource,
     TouchPhase, WindowEvent,
 };
 use winit::event_loop::run_on_demand::EventLoopExtRunOnDemand;
@@ -253,10 +253,6 @@ impl Processor {
                 | WindowEvent::DragPosition { .. }
                 | WindowEvent::DragDropped { .. }
                 | WindowEvent::DataTransferReceived { .. }
-                | WindowEvent::PinchGesture { .. }
-                | WindowEvent::PanGesture { .. }
-                | WindowEvent::Destroyed
-                | WindowEvent::ThemeChanged(_)
                 | WindowEvent::Moved(_)
         )
     }
@@ -345,30 +341,6 @@ impl ApplicationHandler for Processor {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
-        if self.config.debug.print_events {
-            info!(target: LOG_TARGET_WINIT, "About to wait");
-        }
-
-        for window_context in self.windows.values_mut() {
-            window_context.handle_event(
-                #[cfg(target_os = "macos")]
-                event_loop,
-                &self.proxy,
-                &mut self.clipboard,
-                &mut self.scheduler,
-                WinitEvent::AboutToWait,
-            );
-        }
-
-        let control_flow = match self.scheduler.update() {
-            Some(instant) => ControlFlow::WaitUntil(instant),
-            None => ControlFlow::Wait,
-        };
-        event_loop.set_control_flow(control_flow);
-    }
-
-    fn can_create_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {}
 }
 
 impl Processor {
@@ -580,28 +552,6 @@ impl Drop for Processor {
     fn drop(&mut self) {
         self.cleanup();
     }
-}
-
-/// Internal event envelope replacing winit's removed generic `Event<T>`.
-#[derive(Debug, Clone)]
-pub enum WinitEvent {
-    WindowEvent { window_id: WindowId, event: WindowEvent },
-    UserEvent(Event),
-    AboutToWait,
-}
-
-impl From<Event> for WinitEvent {
-    fn from(event: Event) -> Self {
-        Self::UserEvent(event)
-    }
-}
-
-/// Touch data reconstructed from winit's unified pointer events.
-#[derive(Debug, Clone, Copy)]
-pub struct TouchEvent {
-    pub phase: TouchPhase,
-    pub location: PhysicalPosition<f64>,
-    pub id: u64,
 }
 
 /// Alacritty events.
@@ -2137,13 +2087,8 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             return;
                         }
                         self.ctx.mouse.inside_text_area = false;
-                    WindowEvent::PointerLeft { kind, .. } => {
-                        if !matches!(kind, PointerKind::Touch(_)) {
-                            self.ctx.mouse.inside_text_area = false;
-
-                            if self.ctx.display().highlighted_hint.is_some() {
-                                *self.ctx.dirty = true;
-                            }
+                        if self.ctx.display().highlighted_hint.is_some() {
+                            *self.ctx.dirty = true;
                         }
                     },
                     WindowEvent::Ime(ime) => match ime {
@@ -2190,9 +2135,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     | WindowEvent::DataTransferReceived { .. }
                     | WindowEvent::RedrawRequested
                     | WindowEvent::Moved(_) => (),
-                        // Alacritty does not currently provide surrounding-text state to IMEs.
-                        Ime::DeleteSurrounding { .. } => (),
-                    },
                     _ => (),
                 }
             },
