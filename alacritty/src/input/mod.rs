@@ -17,9 +17,7 @@ use std::time::{Duration, Instant};
 use log::debug;
 use winit::cursor::CursorIcon;
 use winit::dpi::PhysicalPosition;
-use winit::event::{
-    ElementState, Modifiers, MouseButton, MouseScrollDelta, Touch as TouchEvent, TouchPhase,
-};
+use winit::event::{ElementState, Modifiers, MouseButton, MouseScrollDelta, TouchPhase};
 #[cfg(target_os = "macos")]
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::ModifiersState;
@@ -45,7 +43,7 @@ use crate::display::hint::HintMatch;
 use crate::display::window::{ImeInhibitor, Window};
 use crate::display::{Display, SizeInfo};
 use crate::event::{
-    ClickState, Event, EventType, InlineSearchState, Mouse, TouchPurpose, TouchZoom,
+    ClickState, Event, EventType, InlineSearchState, Mouse, TouchEvent, TouchPurpose, TouchZoom,
 };
 use crate::message_bar::{self, Message};
 use crate::scheduler::{Scheduler, TimerId, Topic};

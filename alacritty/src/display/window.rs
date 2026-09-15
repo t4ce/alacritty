@@ -1,7 +1,5 @@
 #[cfg(not(any(target_os = "macos", windows)))]
-use winit::platform::startup_notify::{
-    self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
-};
+use winit::platform::startup_notify::{self, EventLoopExtStartupNotify};
 #[cfg(not(any(target_os = "macos", windows)))]
 use winit::window::ActivationToken;
 
@@ -35,7 +33,7 @@ use winit::monitor::Fullscreen;
 use winit::monitor::MonitorHandle;
 #[cfg(windows)]
 use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
-use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle, XlibWindowHandle};
 use winit::window::{
     ImePurpose, Theme, UserAttentionType, Window as WinitWindow, WindowAttributes, WindowId,
 };
@@ -171,7 +169,7 @@ impl Window {
             .or_else(|| event_loop.read_token_from_env())
         {
             log::debug!("Activating window with token: {token:?}");
-            window_attributes = window_attributes.with_activation_token(token);
+            window_attributes = window_attributes.with_active(true);
 
             // Remove the token from the env.
             startup_notify::reset_activation_token_env();
@@ -181,7 +179,8 @@ impl Window {
         #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
         if let Some(parent_window_id) = event_loop.is_x11().then_some(config.window.embed).flatten()
         {
-            window_attributes = window_attributes.with_embed_parent_window(parent_window_id);
+            let parent = RawWindowHandle::Xlib(XlibWindowHandle::new(parent_window_id.into()));
+            window_attributes = unsafe { window_attributes.with_parent_window(Some(parent)) };
         }
 
         window_attributes = window_attributes
