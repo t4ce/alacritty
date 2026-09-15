@@ -60,7 +60,7 @@ use crate::cli::SocketMessage;
 use crate::cli::{Options, Subcommands};
 use crate::config::UiConfig;
 use crate::config::monitor::ConfigMonitor;
-use crate::event::{Event, Processor};
+use crate::event::{EventLoopProxy, Processor};
 #[cfg(target_os = "macos")]
 use crate::macos::locale;
 #[cfg(unix)]
