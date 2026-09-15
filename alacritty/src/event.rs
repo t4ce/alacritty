@@ -150,7 +150,7 @@ impl Processor {
     /// will be used for the rest of the windows.
     pub fn create_initial_window(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         window_options: WindowOptions,
     ) -> Result<(), Box<dyn Error>> {
         let window_context = WindowContext::initial(
@@ -169,7 +169,7 @@ impl Processor {
     /// Create a new terminal window.
     pub fn create_window(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         options: WindowOptions,
     ) -> Result<(), Box<dyn Error>> {
         let gl_config = self.gl_config.as_ref().unwrap();
@@ -228,9 +228,9 @@ impl Processor {
 }
 
 impl ApplicationHandler<Event> for Processor {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+    fn resumed(&mut self, _event_loop: &dyn ActiveEventLoop) {}
 
-    fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
+    fn new_events(&mut self, event_loop: &dyn ActiveEventLoop, cause: StartCause) {
         if cause != StartCause::Init || self.cli_options.daemon {
             return;
         }
@@ -248,7 +248,7 @@ impl ApplicationHandler<Event> for Processor {
 
     fn window_event(
         &mut self,
-        _event_loop: &ActiveEventLoop,
+        _event_loop: &dyn ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -282,7 +282,7 @@ impl ApplicationHandler<Event> for Processor {
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
+    fn user_event(&mut self, event_loop: &dyn ActiveEventLoop, event: Event) {
         if self.config.debug.print_events {
             info!(target: LOG_TARGET_WINIT, "{event:?}");
         }
@@ -463,7 +463,7 @@ impl ApplicationHandler<Event> for Processor {
         };
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.config.debug.print_events {
             info!(target: LOG_TARGET_WINIT, "About to wait");
         }
@@ -489,7 +489,7 @@ impl ApplicationHandler<Event> for Processor {
         event_loop.set_control_flow(control_flow);
     }
 
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+    fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
         if self.config.debug.print_events {
             info!("Exiting the event loop");
         }
@@ -1486,7 +1486,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
     }
 
     #[cfg(target_os = "macos")]
-    fn event_loop(&self) -> &ActiveEventLoop {
+    fn event_loop(&self) -> &dyn ActiveEventLoop {
         self.event_loop
     }
 

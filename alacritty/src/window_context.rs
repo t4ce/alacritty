@@ -72,7 +72,7 @@ pub struct WindowContext {
 impl WindowContext {
     /// Create initial window context that does bootstrapping the graphics API we're going to use.
     pub fn initial(
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
         config: Rc<UiConfig>,
         mut options: WindowOptions,
@@ -121,7 +121,7 @@ impl WindowContext {
     /// Create additional context with the graphics platform other windows are using.
     pub fn additional(
         gl_config: &GlutinConfig,
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         proxy: EventLoopProxy<Event>,
         config: Rc<UiConfig>,
         mut options: WindowOptions,
@@ -198,7 +198,8 @@ impl WindowContext {
         // The PTY forks a process to run the shell on the slave side of the
         // pseudoterminal. A file descriptor for the master side is retained for
         // reading/writing to the shell.
-        let pty = tty::new(&pty_config, display.size_info.into(), display.window.id().into())?;
+        let window_id = u64::try_from(display.window.id().into_raw())?;
+        let pty = tty::new(&pty_config, display.size_info.into(), window_id)?;
 
         #[cfg(not(windows))]
         let master_fd = pty.file().as_raw_fd();
@@ -400,7 +401,7 @@ impl WindowContext {
     /// Process events for this terminal window.
     pub fn handle_event(
         &mut self,
-        #[cfg(target_os = "macos")] event_loop: &ActiveEventLoop,
+        #[cfg(target_os = "macos")] event_loop: &dyn ActiveEventLoop,
         event_proxy: &EventLoopProxy<Event>,
         clipboard: &mut Clipboard,
         scheduler: &mut Scheduler,

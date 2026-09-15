@@ -459,8 +459,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Backspace, ModifiersState::SHIFT,   ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::REPORT_ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_ESC_CODES; Action::Esc("\x7f".into());
         Enter => KeyLocation::Numpad, ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::REPORT_ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_ESC_CODES; Action::Esc("\n".into());
         // Vi mode.
-        Space, ModifiersState::SHIFT | ModifiersState::CONTROL, ~BindingMode::SEARCH; Action::ToggleViMode;
-        Space, ModifiersState::SHIFT | ModifiersState::CONTROL, +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollToBottom;
+        " ", ModifiersState::SHIFT | ModifiersState::CONTROL, ~BindingMode::SEARCH; Action::ToggleViMode;
+        " ", ModifiersState::SHIFT | ModifiersState::CONTROL, +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollToBottom;
         Escape,                             +BindingMode::VI, ~BindingMode::SEARCH; Action::ClearSelection;
         "i",                                +BindingMode::VI, ~BindingMode::SEARCH; Action::ToggleViMode;
         "i",                                +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollToBottom;
@@ -854,7 +854,7 @@ impl<'a> Deserialize<'a> for MouseEvent {
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(
                     "Left, Right, Middle, Back, Forward, WheelUp, WheelDown, or a number from 0 \
-                     to 65536",
+                     to 31",
                 )
             }
 
@@ -863,7 +863,7 @@ impl<'a> Deserialize<'a> for MouseEvent {
                 E: de::Error,
             {
                 match value {
-                    0..=65536 => Ok(MouseEvent::Button(MouseButton::Other(value as u16))),
+                    0..=31 => Ok(MouseEvent::Button(MouseButton::try_from_u8(value as u8).unwrap())),
                     _ => Err(E::invalid_value(Unexpected::Signed(value), &self)),
                 }
             }
@@ -873,7 +873,7 @@ impl<'a> Deserialize<'a> for MouseEvent {
                 E: de::Error,
             {
                 match value {
-                    0..=65536 => Ok(MouseEvent::Button(MouseButton::Other(value as u16))),
+                    0..=31 => Ok(MouseEvent::Button(MouseButton::try_from_u8(value as u8).unwrap())),
                     _ => Err(E::invalid_value(Unexpected::Unsigned(value), &self)),
                 }
             }

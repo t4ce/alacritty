@@ -15,6 +15,7 @@ use std::mem;
 use std::time::{Duration, Instant};
 
 use log::debug;
+use winit::cursor::CursorIcon;
 use winit::dpi::PhysicalPosition;
 use winit::event::{
     ElementState, Modifiers, MouseButton, MouseScrollDelta, Touch as TouchEvent, TouchPhase,
@@ -24,7 +25,6 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::ModifiersState;
 #[cfg(target_os = "macos")]
 use winit::platform::macos::ActiveEventLoopExtMacOS;
-use winit::window::CursorIcon;
 
 use alacritty_terminal::event::EventListener;
 use alacritty_terminal::grid::{Dimensions, Scroll};
@@ -109,7 +109,7 @@ pub trait ActionContext<T: EventListener> {
     fn message(&self) -> Option<&Message>;
     fn config(&self) -> &UiConfig;
     #[cfg(target_os = "macos")]
-    fn event_loop(&self) -> &ActiveEventLoop;
+    fn event_loop(&self) -> &dyn ActiveEventLoop;
     fn mouse_mode(&self) -> bool;
     fn clipboard_mut(&mut self) -> &mut Clipboard;
     fn scheduler_mut(&mut self) -> &mut Scheduler;
@@ -624,7 +624,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 MouseButton::Middle => 1,
                 MouseButton::Right => 2,
                 // Can't properly report more than three buttons..
-                MouseButton::Back | MouseButton::Forward | MouseButton::Other(_) => return,
+                _ => return,
             };
 
             self.mouse_report(code, ElementState::Pressed);
@@ -700,7 +700,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                 MouseButton::Middle => 1,
                 MouseButton::Right => 2,
                 // Can't properly report more than three buttons.
-                MouseButton::Back | MouseButton::Forward | MouseButton::Other(_) => return,
+                _ => return,
             };
             self.mouse_report(code, ElementState::Released);
             return;
@@ -1269,7 +1269,7 @@ mod tests {
         }
 
         #[cfg(target_os = "macos")]
-        fn event_loop(&self) -> &ActiveEventLoop {
+        fn event_loop(&self) -> &dyn ActiveEventLoop {
             unimplemented!();
         }
 

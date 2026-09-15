@@ -74,14 +74,18 @@ impl IpcListener {
                 let _ = self.event_proxy.send_event(event);
             },
             SocketMessage::Config(ipc_config) => {
-                let window_id =
-                    ipc_config.window_id.and_then(|id| u64::try_from(id).ok()).map(WindowId::from);
+                let window_id = ipc_config
+                    .window_id
+                    .and_then(|id| usize::try_from(id).ok())
+                    .map(WindowId::from_raw);
                 let event = Event::new(EventType::IpcConfig(ipc_config), window_id);
                 let _ = self.event_proxy.send_event(event);
             },
             SocketMessage::GetConfig(config) => {
-                let window_id =
-                    config.window_id.and_then(|id| u64::try_from(id).ok()).map(WindowId::from);
+                let window_id = config
+                    .window_id
+                    .and_then(|id| usize::try_from(id).ok())
+                    .map(WindowId::from_raw);
                 let event = Event::new(EventType::IpcGetConfig(Arc::new(stream)), window_id);
                 let _ = self.event_proxy.send_event(event);
             },

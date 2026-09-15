@@ -9,7 +9,6 @@ use winit::platform::macos::OptionAsAlt;
 
 use alacritty_terminal::event::EventListener;
 use alacritty_terminal::term::TermMode;
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 use crate::config::{Action, BindingKey, BindingMode, KeyBinding};
 use crate::display::window::ImeInhibitor;
@@ -36,7 +35,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             return;
         }
 
-        let text = key.text_with_all_modifiers().unwrap_or_default();
+        let text = key.text_with_all_modifiers.as_deref().unwrap_or_default();
 
         // All key bindings are disabled while a hint is being selected.
         if self.ctx.display().hint_state.active() {
@@ -118,8 +117,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         };
 
         match key.logical_key {
-            Key::Named(named) => {
-                if named.to_text().is_some() {
+            Key::Named(_) => {
+                if key.logical_key.to_text().is_some() {
                     alt_send_esc
                 } else {
                     // Treat `Alt` as modifier for named keys without text, like ArrowUp.
@@ -166,7 +165,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         match key.logical_key {
             _ if disambiguate => true,
             // Exclude all the named keys unless they have textual representation.
-            Key::Named(named) => named.to_text().is_none(),
+            Key::Named(_) => key.logical_key.to_text().is_none(),
             _ => text.is_empty(),
         }
     }
@@ -196,7 +195,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             if (cfg!(target_os = "macos") || (cfg!(windows) && mods.control_key()))
                 && mods.alt_key()
             {
-                key.key_without_modifiers()
+                key.key_without_modifiers.clone()
             } else {
                 Key::Character(ch.to_lowercase().into())
             }
@@ -259,7 +258,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
         }
 
         // Mask `Alt` modifier from input when we won't send esc.
-        let text = key.text_with_all_modifiers().unwrap_or_default();
+        let text = key.text_with_all_modifiers.as_deref().unwrap_or_default();
         let mods = if self.alt_send_esc(&key, text) { mods } else { mods & !ModifiersState::ALT };
 
         let bytes = match key.logical_key.as_ref() {
@@ -309,7 +308,7 @@ fn build_sequence(key: KeyEvent, mods: ModifiersState, mode: TermMode) -> Vec<u8
     let context =
         SequenceBuilder { mode, modifiers, kitty_seq, kitty_encode_all, kitty_event_type };
 
-    let associated_text = key.text_with_all_modifiers().filter(|text| {
+    let associated_text = key.text_with_all_modifiers.as_deref().filter(|text| {
         mode.contains(TermMode::REPORT_ASSOCIATED_TEXT)
             && key.state != ElementState::Released
             && !text.is_empty()
@@ -398,7 +397,7 @@ impl SequenceBuilder {
             //
             // However it should only be performed when `SHIFT` is pressed.
             if shift && alternate_key_code == unicode_key_code {
-                if let Key::Character(unmodded) = key.key_without_modifiers().as_ref() {
+                if let Key::Character(unmodded) = &key.key_without_modifiers {
                     unicode_key_code = u32::from(unmodded.chars().next().unwrap_or(unshifted_ch));
                 }
             }
@@ -598,7 +597,6 @@ impl SequenceBuilder {
             NamedKey::Tab => "9",
             NamedKey::Enter => "13",
             NamedKey::Escape => "27",
-            NamedKey::Space => "32",
             NamedKey::Backspace => "127",
             _ => "",
         };
@@ -704,7 +702,7 @@ impl From<ModifiersState> for SequenceModifiers {
         modifiers.set(Self::SHIFT, mods.shift_key());
         modifiers.set(Self::ALT, mods.alt_key());
         modifiers.set(Self::CONTROL, mods.control_key());
-        modifiers.set(Self::SUPER, mods.super_key());
+        modifiers.set(Self::SUPER, mods.meta_key());
         modifiers
     }
 }

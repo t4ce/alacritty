@@ -12,9 +12,9 @@ use winit::platform::wayland::WindowAttributesExtWayland;
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
 use {
     std::io::Cursor,
-    winit::platform::x11::{WindowAttributesExtX11, ActiveEventLoopExtX11},
+    winit::platform::x11::{ActiveEventLoopExtX11, WindowAttributesX11},
     glutin::platform::x11::X11VisualInfo,
-    winit::window::Icon,
+    winit::icon::RgbaIcon,
     png::Decoder,
 };
 
@@ -28,15 +28,16 @@ use {
 };
 
 use bitflags::bitflags;
+use winit::cursor::CursorIcon;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event_loop::ActiveEventLoop;
+use winit::monitor::Fullscreen;
 use winit::monitor::MonitorHandle;
 #[cfg(windows)]
 use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::{
-    CursorIcon, Fullscreen, ImePurpose, Theme, UserAttentionType, Window as WinitWindow,
-    WindowAttributes, WindowId,
+    ImePurpose, Theme, UserAttentionType, Window as WinitWindow, WindowAttributes, WindowId,
 };
 
 use alacritty_terminal::index::Point;
@@ -62,6 +63,8 @@ pub enum Error {
 
     /// Error dealing with fonts.
     Font(crossfont::Error),
+    /// Error requesting a window operation.
+    WindowRequest(winit::error::RequestError),
 }
 
 /// Result of fallible operations concerning a Window.
@@ -72,6 +75,7 @@ impl std::error::Error for Error {
         match self {
             Error::WindowCreation(err) => err.source(),
             Error::Font(err) => err.source(),
+            Error::WindowRequest(err) => err.source(),
         }
     }
 }
@@ -81,6 +85,7 @@ impl Display for Error {
         match self {
             Error::WindowCreation(err) => write!(f, "Error creating GL context; {err}"),
             Error::Font(err) => err.fmt(f),
+            Error::WindowRequest(err) => write!(f, "Error requesting window operation; {err}"),
         }
     }
 }
@@ -88,6 +93,12 @@ impl Display for Error {
 impl From<winit::error::OsError> for Error {
     fn from(val: winit::error::OsError) -> Self {
         Error::WindowCreation(val)
+    }
+}
+
+impl From<winit::error::RequestError> for Error {
+    fn from(val: winit::error::RequestError) -> Self {
+        Error::WindowRequest(val)
     }
 }
 
@@ -113,7 +124,7 @@ pub struct Window {
     /// Hold the window when terminal exits.
     pub hold: bool,
 
-    window: WinitWindow,
+    window: Box<dyn WinitWindow>,
 
     /// Current window title.
     title: String,
@@ -129,7 +140,7 @@ impl Window {
     ///
     /// This creates a window and fully initializes a window.
     pub fn new(
-        event_loop: &ActiveEventLoop,
+        event_loop: &dyn ActiveEventLoop,
         config: &UiConfig,
         identity: &Identity,
         options: &mut WindowOptions,
@@ -187,7 +198,7 @@ impl Window {
 
         // Text cursor.
         let current_mouse_cursor = CursorIcon::Text;
-        window.set_cursor(current_mouse_cursor);
+        window.set_cursor(current_mouse_cursor.into());
 
         // Enable IME.
         window.set_ime_allowed(true);
@@ -224,12 +235,12 @@ impl Window {
 
     #[inline]
     pub fn request_inner_size(&self, size: PhysicalSize<u32>) {
-        let _ = self.window.request_inner_size(size);
+        let _ = self.window.request_surface_size(size.into());
     }
 
     #[inline]
     pub fn inner_size(&self) -> PhysicalSize<u32> {
-        self.window.inner_size()
+        self.window.surface_size()
     }
 
     #[inline]
@@ -268,7 +279,7 @@ impl Window {
     pub fn set_mouse_cursor(&mut self, cursor: CursorIcon) {
         if cursor != self.current_mouse_cursor {
             self.current_mouse_cursor = cursor;
-            self.window.set_cursor(cursor);
+            self.window.set_cursor(cursor.into());
         }
     }
 
@@ -300,21 +311,28 @@ impl Window {
             let mut reader = decoder.read_info().expect("invalid embedded icon");
             let mut buf = vec![0; reader.output_buffer_size()];
             let _ = reader.next_frame(&mut buf);
-            Icon::from_rgba(buf, reader.info().width, reader.info().height)
+            RgbaIcon::new(buf, reader.info().width, reader.info().height)
                 .expect("invalid embedded icon format")
+                .into()
         };
 
-        let builder = WinitWindow::default_attributes()
-            .with_name(&identity.class.general, &identity.class.instance)
+        let builder = WindowAttributes::default()
             .with_decorations(window_config.decorations != Decorations::None);
 
         #[cfg(feature = "x11")]
         let builder = builder.with_window_icon(Some(icon));
 
         #[cfg(feature = "x11")]
-        let builder = match x11_visual {
-            Some(visual) => builder.with_x11_visual(visual.visual_id() as u32),
-            None => builder,
+        #[cfg(feature = "x11")]
+        let builder = {
+            let x11_attributes = match x11_visual {
+                Some(visual) => WindowAttributesX11::default()
+                    .with_name(&identity.class.general, &identity.class.instance)
+                    .with_x11_visual(visual.visual_id() as u32),
+                None => WindowAttributesX11::default()
+                    .with_name(&identity.class.general, &identity.class.instance),
+            };
+            builder.with_platform_attributes(Box::new(x11_attributes))
         };
 
         builder
@@ -324,7 +342,7 @@ impl Window {
     pub fn get_platform_window(_: &Identity, window_config: &WindowConfig) -> WindowAttributes {
         let icon = winit::window::Icon::from_resource(IDI_ICON, None);
 
-        WinitWindow::default_attributes()
+        WindowAttributes::default()
             .with_decorations(window_config.decorations != Decorations::None)
             .with_window_icon(icon.as_ref().ok().cloned())
             .with_taskbar_icon(icon.ok())
@@ -337,7 +355,7 @@ impl Window {
         tabbing_id: &Option<String>,
     ) -> WindowAttributes {
         let mut window =
-            WinitWindow::default_attributes().with_option_as_alt(window_config.option_as_alt());
+            WindowAttributes::default().with_option_as_alt(window_config.option_as_alt());
 
         if let Some(tabbing_id) = tabbing_id {
             window = window.with_tabbing_identifier(tabbing_id);
@@ -385,7 +403,7 @@ impl Window {
     }
 
     pub fn set_resize_increments(&self, increments: PhysicalSize<f32>) {
-        self.window.set_resize_increments(Some(increments));
+        self.window.set_surface_resize_increments(Some(increments.into()));
     }
 
     /// Toggle the window's fullscreen state.
@@ -462,8 +480,8 @@ impl Window {
         let height = size.cell_height as f64;
 
         self.window.set_ime_cursor_area(
-            PhysicalPosition::new(nspot_x, nspot_y),
-            PhysicalSize::new(width, height),
+            PhysicalPosition::new(nspot_x, nspot_y).into(),
+            PhysicalSize::new(width, height).into(),
         );
     }
 
