@@ -1,12 +1,10 @@
 #[cfg(not(any(target_os = "macos", windows)))]
-use winit::platform::startup_notify::{
-    self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
-};
+use winit::platform::startup_notify::{self, EventLoopExtStartupNotify};
 #[cfg(not(any(target_os = "macos", windows)))]
 use winit::window::ActivationToken;
 
-#[cfg(all(not(feature = "x11"), not(any(target_os = "macos", windows))))]
-use winit::platform::wayland::WindowAttributesExtWayland;
+#[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+use winit::platform::wayland::{ActiveEventLoopExtWayland, WindowAttributesWayland};
 
 #[rustfmt::skip]
 #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
@@ -152,8 +150,6 @@ impl Window {
         let mut window_attributes = Window::get_platform_window(
             &identity,
             &config.window,
-            #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-            x11_visual,
             #[cfg(target_os = "macos")]
             &options.window_tabbing_id.take(),
         );
@@ -164,24 +160,42 @@ impl Window {
         }
 
         #[cfg(not(any(target_os = "macos", windows)))]
-        if let Some(token) = options
+        let activation_token = options
             .activation_token
             .take()
             .map(ActivationToken::from_raw)
-            .or_else(|| event_loop.read_token_from_env())
-        {
-            log::debug!("Activating window with token: {token:?}");
-            window_attributes = window_attributes.with_activation_token(token);
+            .or_else(|| event_loop.read_token_from_env());
 
-            // Remove the token from the env.
+        #[cfg(not(any(target_os = "macos", windows)))]
+        if let Some(token) = activation_token.as_ref() {
+            log::debug!("Activating window with token: {token:?}");
             startup_notify::reset_activation_token_env();
         }
 
-        // On X11, embed the window inside another if the parent ID has been set.
         #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
-        if let Some(parent_window_id) = event_loop.is_x11().then_some(config.window.embed).flatten()
-        {
-            window_attributes = window_attributes.with_embed_parent_window(parent_window_id);
+        if event_loop.is_x11() {
+            let mut attributes = WindowAttributesX11::default()
+                .with_name(&identity.class.general, &identity.class.instance);
+            if let Some(visual) = x11_visual {
+                attributes = attributes.with_x11_visual(visual.visual_id() as u32);
+            }
+            if let Some(token) = activation_token.clone() {
+                attributes = attributes.with_activation_token(token);
+            }
+            if let Some(parent_window_id) = config.window.embed {
+                attributes = attributes.with_embed_parent_window(parent_window_id);
+            }
+            window_attributes = window_attributes.with_platform_attributes(Box::new(attributes));
+        }
+
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        if event_loop.is_wayland() {
+            let mut attributes = WindowAttributesWayland::default()
+                .with_name(&identity.class.general, &identity.class.instance);
+            if let Some(token) = activation_token {
+                attributes = attributes.with_activation_token(token);
+            }
+            window_attributes = window_attributes.with_platform_attributes(Box::new(attributes));
         }
 
         window_attributes = window_attributes
@@ -298,11 +312,8 @@ impl Window {
 
     #[cfg(not(any(target_os = "macos", windows)))]
     pub fn get_platform_window(
-        identity: &Identity,
+        _identity: &Identity,
         window_config: &WindowConfig,
-        #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))] x11_visual: Option<
-            X11VisualInfo,
-        >,
     ) -> WindowAttributes {
         #[cfg(feature = "x11")]
         let icon = {
@@ -321,19 +332,6 @@ impl Window {
 
         #[cfg(feature = "x11")]
         let builder = builder.with_window_icon(Some(icon));
-
-        #[cfg(feature = "x11")]
-        #[cfg(feature = "x11")]
-        let builder = {
-            let x11_attributes = match x11_visual {
-                Some(visual) => WindowAttributesX11::default()
-                    .with_name(&identity.class.general, &identity.class.instance)
-                    .with_x11_visual(visual.visual_id() as u32),
-                None => WindowAttributesX11::default()
-                    .with_name(&identity.class.general, &identity.class.instance),
-            };
-            builder.with_platform_attributes(Box::new(x11_attributes))
-        };
 
         builder
     }
