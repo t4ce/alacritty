@@ -135,10 +135,11 @@ impl Drop for TemporaryFiles {
 /// config change monitor, and runs the main display loop.
 fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
     // Setup winit event loop.
-    let window_event_loop = EventLoop::<Event>::with_user_event().build()?;
+    let window_event_loop = EventLoop::new()?;
+    let (event_proxy, event_rx) = EventLoopProxy::new(window_event_loop.create_proxy());
 
     // Initialize the logger as soon as possible as to capture output from other subsystems.
-    let log_file = logging::initialize(&options, window_event_loop.create_proxy())
+    let log_file = logging::initialize(&options, event_proxy.clone())
         .expect("Unable to initialize logger");
 
     info!("Welcome to Alacritty");
@@ -187,7 +188,7 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
 
     // Spawn the Unix I/O event polling thread.
     #[cfg(unix)]
-    let socket_path = match IoListener::spawn(&config, &options, window_event_loop.create_proxy()) {
+    let socket_path = match IoListener::spawn(&config, &options, event_proxy.clone()) {
         Ok(handle) => handle.ipc_socket_path,
         Err(err) if options.daemon => return Err(err.into()),
         Err(err) => {
@@ -205,7 +206,7 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
     };
 
     // Event processor.
-    let mut processor = Processor::new(config, options, &window_event_loop);
+    let processor = Processor::new(config, options, &window_event_loop, event_proxy, event_rx);
 
     // Start event loop and block until shutdown.
     let result = processor.run(window_event_loop);

@@ -1227,7 +1227,7 @@ impl<'a> de::Deserialize<'a> for ModsWrapper {
                 let mut res = ModifiersState::empty();
                 for modifier in value.split('|') {
                     match modifier.trim().to_lowercase().as_str() {
-                        "command" | "super" => res.insert(ModifiersState::SUPER),
+                        "command" | "super" => res.insert(ModifiersState::META),
                         "shift" => res.insert(ModifiersState::SHIFT),
                         "alt" | "option" => res.insert(ModifiersState::ALT),
                         "control" => res.insert(ModifiersState::CONTROL),

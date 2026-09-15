@@ -13,10 +13,8 @@ use std::time::Instant;
 use std::{env, process};
 
 use log::{Level, LevelFilter};
-use winit::event_loop::EventLoopProxy;
-
 use crate::cli::Options;
-use crate::event::{Event, EventType};
+use crate::event::{Event, EventLoopProxy, EventType};
 use crate::message_bar::{Message, MessageType};
 
 /// Logging target for IPC config error messages.
@@ -60,7 +58,7 @@ const ALLOWED_TARGETS: &[&str] = &[
 /// Initialize the logger to its defaults.
 pub fn initialize(
     options: &Options,
-    event_proxy: EventLoopProxy<Event>,
+    event_proxy: EventLoopProxy,
 ) -> Result<Option<PathBuf>, log::SetLoggerError> {
     log::set_max_level(options.log_level());
 
@@ -74,12 +72,12 @@ pub fn initialize(
 pub struct Logger {
     logfile: Mutex<OnDemandLogFile>,
     stdout: Mutex<LineWriter<Stdout>>,
-    event_proxy: Mutex<EventLoopProxy<Event>>,
+    event_proxy: Mutex<EventLoopProxy>,
     start: Instant,
 }
 
 impl Logger {
-    fn new(event_proxy: EventLoopProxy<Event>) -> Self {
+    fn new(event_proxy: EventLoopProxy) -> Self {
         let logfile = Mutex::new(OnDemandLogFile::new());
         let stdout = Mutex::new(LineWriter::new(io::stdout()));
 

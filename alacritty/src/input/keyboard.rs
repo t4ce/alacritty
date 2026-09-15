@@ -135,7 +135,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             Key::Named(NamedKey::Shift)
                 | Key::Named(NamedKey::Control)
                 | Key::Named(NamedKey::Alt)
-                | Key::Named(NamedKey::Super)
+                | Key::Named(NamedKey::Meta)
         )
     }
 
@@ -611,15 +611,11 @@ impl SequenceBuilder {
             (NamedKey::Shift, KeyLocation::Left) => "57441",
             (NamedKey::Control, KeyLocation::Left) => "57442",
             (NamedKey::Alt, KeyLocation::Left) => "57443",
-            (NamedKey::Super, KeyLocation::Left) => "57444",
-            (NamedKey::Hyper, KeyLocation::Left) => "57445",
-            (NamedKey::Meta, KeyLocation::Left) => "57446",
+            (NamedKey::Meta, KeyLocation::Left) => "57444",
             (NamedKey::Shift, _) => "57447",
             (NamedKey::Control, _) => "57448",
             (NamedKey::Alt, _) => "57449",
-            (NamedKey::Super, _) => "57450",
-            (NamedKey::Hyper, _) => "57451",
-            (NamedKey::Meta, _) => "57452",
+            (NamedKey::Meta, _) => "57450",
             (NamedKey::CapsLock, _) => "57358",
             (NamedKey::NumLock, _) => "57360",
             _ => base,
@@ -634,7 +630,7 @@ impl SequenceBuilder {
             NamedKey::Shift => mods.set(SequenceModifiers::SHIFT, press),
             NamedKey::Control => mods.set(SequenceModifiers::CONTROL, press),
             NamedKey::Alt => mods.set(SequenceModifiers::ALT, press),
-            NamedKey::Super => mods.set(SequenceModifiers::SUPER, press),
+            NamedKey::Meta => mods.set(SequenceModifiers::SUPER, press),
             _ => (),
         }
 

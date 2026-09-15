@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 #[cfg(unix)]
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, SendError, Sender};
 use std::time::{Duration, Instant};
 use std::{env, f32, mem};
 
@@ -26,11 +27,8 @@ use glutin::config::Config as GlutinConfig;
 use glutin::display::GetGlDisplay;
 use log::{debug, error, info, warn};
 use winit::application::ApplicationHandler;
-use winit::event::{
-    ElementState, Event as WinitEvent, Ime, Modifiers, MouseButton, StartCause,
-    Touch as TouchEvent, WindowEvent,
-};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy};
+use winit::event::{ElementState, Ime, Modifiers, MouseButton, StartCause, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy as WinitEventLoopProxy};
 use winit::raw_window_handle::HasDisplayHandle;
 use winit::window::WindowId;
 
@@ -92,7 +90,8 @@ pub struct Processor {
     initial_window_options: Option<WindowOptions>,
     initial_window_error: Option<Box<dyn Error>>,
     windows: HashMap<WindowId, WindowContext, RandomState>,
-    proxy: EventLoopProxy<Event>,
+    proxy: EventLoopProxy,
+    event_rx: Receiver<Event>,
     gl_config: Option<GlutinConfig>,
     #[cfg(unix)]
     global_ipc_options: ParsedOptions,
@@ -105,9 +104,10 @@ impl Processor {
     pub fn new(
         config: UiConfig,
         cli_options: CliOptions,
-        event_loop: &EventLoop<Event>,
+        event_loop: &EventLoop,
+        proxy: EventLoopProxy,
+        event_rx: Receiver<Event>,
     ) -> Processor {
-        let proxy = event_loop.create_proxy();
         let scheduler = Scheduler::new(proxy.clone());
         let initial_window_options = Some(cli_options.window_options.clone());
 
@@ -125,7 +125,7 @@ impl Processor {
         let mut config_monitor = None;
         if config.live_config_reload() {
             config_monitor =
-                ConfigMonitor::new(config.config_paths.clone(), event_loop.create_proxy());
+                ConfigMonitor::new(config.config_paths.clone(), proxy.clone());
         }
 
         Processor {
@@ -133,6 +133,7 @@ impl Processor {
             initial_window_error: None,
             cli_options,
             proxy,
+            event_rx,
             scheduler,
             gl_config: None,
             config: Rc::new(config),
@@ -197,12 +198,8 @@ impl Processor {
     /// Run the event loop.
     ///
     /// The result is exit code generate from the loop.
-    pub fn run(&mut self, event_loop: EventLoop<Event>) -> Result<(), Box<dyn Error>> {
-        let result = event_loop.run_app(self);
-        match self.initial_window_error.take() {
-            Some(initial_window_error) => Err(initial_window_error),
-            _ => result.map_err(Into::into),
-        }
+    pub fn run(self, event_loop: EventLoop) -> Result<(), Box<dyn Error>> {
+        event_loop.run_app(self).map_err(Into::into)
     }
 
     /// Check if an event is irrelevant and can be skipped.
@@ -227,7 +224,7 @@ impl Processor {
     }
 }
 
-impl ApplicationHandler<Event> for Processor {
+impl ApplicationHandler for Processor {
     fn resumed(&mut self, _event_loop: &dyn ActiveEventLoop) {}
 
     fn new_events(&mut self, event_loop: &dyn ActiveEventLoop, cause: StartCause) {
@@ -282,6 +279,14 @@ impl ApplicationHandler<Event> for Processor {
         }
     }
 
+    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
+        while let Ok(event) = self.event_rx.try_recv() {
+            self.user_event(event_loop, event);
+        }
+    }
+}
+
+impl Processor {
     fn user_event(&mut self, event_loop: &dyn ActiveEventLoop, event: Event) {
         if self.config.debug.print_events {
             info!(target: LOG_TARGET_WINIT, "{event:?}");
@@ -463,6 +468,9 @@ impl ApplicationHandler<Event> for Processor {
         };
     }
 
+}
+
+impl ApplicationHandler for Processor {
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.config.debug.print_events {
             info!(target: LOG_TARGET_WINIT, "About to wait");
@@ -489,7 +497,7 @@ impl ApplicationHandler<Event> for Processor {
         event_loop.set_control_flow(control_flow);
     }
 
-    fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
+    fn cleanup(&mut self) {
         if self.config.debug.print_events {
             info!("Exiting the event loop");
         }
@@ -514,6 +522,8 @@ impl ApplicationHandler<Event> for Processor {
         // as a safe placeholder.
         self.clipboard = Clipboard::new_nop();
     }
+
+    fn can_create_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {}
 }
 
 /// Alacritty events.
@@ -532,9 +542,22 @@ impl Event {
     }
 }
 
-impl From<Event> for WinitEvent<Event> {
-    fn from(event: Event) -> Self {
-        WinitEvent::UserEvent(event)
+#[derive(Clone, Debug)]
+pub struct EventLoopProxy {
+    proxy: WinitEventLoopProxy,
+    sender: Sender<Event>,
+}
+
+impl EventLoopProxy {
+    pub fn new(proxy: WinitEventLoopProxy) -> (Self, Receiver<Event>) {
+        let (sender, receiver) = mpsc::channel();
+        (Self { proxy, sender }, receiver)
+    }
+
+    pub fn send_event(&self, event: Event) -> Result<(), SendError<Event>> {
+        self.sender.send(event)?;
+        self.proxy.wake_up();
+        Ok(())
     }
 }
 

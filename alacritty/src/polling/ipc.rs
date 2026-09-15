@@ -11,11 +11,10 @@ use std::{env, fs};
 
 use log::{error, warn};
 use std::result::Result;
-use winit::event_loop::EventLoopProxy;
 use winit::window::WindowId;
 
 use crate::cli::{Options, SocketMessage};
-use crate::event::{Event, EventType};
+use crate::event::{Event, EventLoopProxy, EventType};
 
 /// Environment variable name for the IPC socket path.
 const ALACRITTY_SOCKET_ENV: &str = "ALACRITTY_SOCKET";
@@ -24,14 +23,14 @@ const ALACRITTY_SOCKET_ENV: &str = "ALACRITTY_SOCKET";
 pub struct IpcListener {
     pub socket: UnixListener,
 
-    event_proxy: EventLoopProxy<Event>,
+    event_proxy: EventLoopProxy,
     data: String,
 }
 
 impl IpcListener {
     pub fn new(
         options: &Options,
-        event_proxy: EventLoopProxy<Event>,
+        event_proxy: EventLoopProxy,
         path: &Path,
     ) -> Result<Self, IoError> {
         // Create unix socket in nonblocking mode.
