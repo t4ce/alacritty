@@ -11,11 +11,13 @@ use crate::gl::types::*;
 mod atlas;
 mod builtin_font;
 mod gles2;
+#[cfg(not(target_os = "trueos"))]
 mod glsl3;
 pub mod glyph_cache;
 
 use atlas::Atlas;
 pub use gles2::Gles2Renderer;
+#[cfg(not(target_os = "trueos"))]
 pub use glsl3::Glsl3Renderer;
 pub use glyph_cache::GlyphCache;
 use glyph_cache::{Glyph, LoadGlyph};

@@ -13,6 +13,8 @@ use crate::display::SizeInfo;
 use crate::display::color::Rgb;
 use crate::display::content::RenderableCell;
 use crate::gl::types::*;
+#[cfg(target_os = "trueos")]
+use crate::renderer::aot::ProgramId;
 use crate::renderer::shader::{ShaderError, ShaderProgram, ShaderVersion};
 use crate::{gl, renderer};
 
@@ -227,7 +229,9 @@ impl RenderLines {
 }
 
 /// Shader sources for rect rendering program.
+#[cfg(not(target_os = "trueos"))]
 const RECT_SHADER_F: &str = include_str!("../../res/rect.f.glsl");
+#[cfg(not(target_os = "trueos"))]
 const RECT_SHADER_V: &str = include_str!("../../res/rect.v.glsl");
 
 #[repr(C)]
@@ -436,14 +440,29 @@ pub struct RectShaderProgram {
 
 impl RectShaderProgram {
     pub fn new(shader_version: ShaderVersion, kind: RectKind) -> Result<Self, ShaderError> {
-        // XXX: This must be in-sync with fragment shader defines.
-        let header = match kind {
-            RectKind::Undercurl => Some("#define DRAW_UNDERCURL\n"),
-            RectKind::DottedUnderline => Some("#define DRAW_DOTTED\n"),
-            RectKind::DashedUnderline => Some("#define DRAW_DASHED\n"),
-            _ => None,
+        #[cfg(target_os = "trueos")]
+        let _ = shader_version;
+
+        #[cfg(not(target_os = "trueos"))]
+        let program = {
+            // XXX: This must be in-sync with fragment shader defines.
+            let header = match kind {
+                RectKind::Undercurl => Some("#define DRAW_UNDERCURL\n"),
+                RectKind::DottedUnderline => Some("#define DRAW_DOTTED\n"),
+                RectKind::DashedUnderline => Some("#define DRAW_DASHED\n"),
+                _ => None,
+            };
+            ShaderProgram::new(shader_version, header, RECT_SHADER_V, RECT_SHADER_F)?
         };
-        let program = ShaderProgram::new(shader_version, header, RECT_SHADER_V, RECT_SHADER_F)?;
+
+        #[cfg(target_os = "trueos")]
+        let program = ShaderProgram::aot(match kind {
+            RectKind::Normal => ProgramId::RectNormal,
+            RectKind::Undercurl => ProgramId::RectUndercurl,
+            RectKind::DottedUnderline => ProgramId::RectDotted,
+            RectKind::DashedUnderline => ProgramId::RectDashed,
+            RectKind::NumKinds => unreachable!("invalid rectangle shader kind"),
+        });
 
         Ok(Self {
             u_cell_width: program.get_uniform_location(c"cellWidth").ok(),

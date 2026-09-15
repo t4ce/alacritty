@@ -1,15 +1,25 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::ffi::{CStr, CString};
-use std::sync::OnceLock;
+use std::fmt;
+#[cfg(not(target_os = "trueos"))]
+use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{fmt, ptr};
 
+#[cfg(not(target_os = "trueos"))]
+use std::collections::HashSet;
+#[cfg(not(target_os = "trueos"))]
+use std::sync::OnceLock;
+
+#[cfg(not(target_os = "trueos"))]
 use ahash::RandomState;
 use crossfont::Metrics;
-use glutin::context::{ContextApi, GlContext, PossiblyCurrentContext};
+#[cfg(not(target_os = "trueos"))]
+use glutin::context::ContextApi;
+use glutin::context::{GlContext, PossiblyCurrentContext};
 use glutin::display::{GetGlDisplay, GlDisplay};
-use log::{LevelFilter, debug, info};
+use log::info;
+#[cfg(not(target_os = "trueos"))]
+use log::{LevelFilter, debug};
 use unicode_width::UnicodeWidthChar;
 
 use alacritty_terminal::index::Point;
@@ -23,6 +33,8 @@ use crate::gl;
 use crate::renderer::rects::{RectRenderer, RenderRect};
 use crate::renderer::shader::ShaderError;
 
+#[cfg(target_os = "trueos")]
+mod aot;
 pub mod platform;
 pub mod rects;
 mod shader;
@@ -31,7 +43,9 @@ mod text;
 pub use text::{GlyphCache, LoaderApi};
 
 use shader::ShaderVersion;
-use text::{Gles2Renderer, Glsl3Renderer, TextRenderer};
+#[cfg(not(target_os = "trueos"))]
+use text::Glsl3Renderer;
+use text::{Gles2Renderer, TextRenderer};
 
 /// Whether the OpenGL functions have been loaded.
 pub static GL_FUNS_LOADED: AtomicBool = AtomicBool::new(false);
@@ -82,6 +96,7 @@ impl From<String> for Error {
 #[derive(Debug)]
 enum TextRendererProvider {
     Gles2(Gles2Renderer),
+    #[cfg(not(target_os = "trueos"))]
     Glsl3(Glsl3Renderer),
 }
 
@@ -120,6 +135,9 @@ impl Renderer {
         context: &PossiblyCurrentContext,
         renderer_preference: Option<RendererPreference>,
     ) -> Result<Self, Error> {
+        #[cfg(target_os = "trueos")]
+        let _ = renderer_preference;
+
         // We need to load OpenGL functions once per instance, but only after we make our context
         // current due to WGL limitations.
         if !GL_FUNS_LOADED.swap(true, Ordering::Relaxed) {
@@ -137,30 +155,46 @@ impl Renderer {
         info!("Running on {renderer}");
         info!("OpenGL version {gl_version}, shader_version {shader_version}");
 
+        #[cfg(not(target_os = "trueos"))]
         // Check if robustness is supported.
         let robustness = Self::supports_robustness();
+        #[cfg(target_os = "trueos")]
+        let robustness = false;
 
-        let is_gles_context = matches!(context.context_api(), ContextApi::Gles(_));
+        #[cfg(not(target_os = "trueos"))]
+        let (text_renderer, rect_renderer) = {
+            let is_gles_context = matches!(context.context_api(), ContextApi::Gles(_));
 
-        // Use the config option to enforce a particular renderer configuration.
-        let (use_glsl3, allow_dsb) = match renderer_preference {
-            Some(RendererPreference::Glsl3) => (true, true),
-            Some(RendererPreference::Gles2) => (false, true),
-            Some(RendererPreference::Gles2Pure) => (false, false),
-            None => (shader_version.as_ref() >= "3.3" && !is_gles_context, true),
+            // Use the config option to enforce a particular renderer configuration.
+            let (use_glsl3, allow_dsb) = match renderer_preference {
+                Some(RendererPreference::Glsl3) => (true, true),
+                Some(RendererPreference::Gles2) => (false, true),
+                Some(RendererPreference::Gles2Pure) => (false, false),
+                None => (shader_version.as_ref() >= "3.3" && !is_gles_context, true),
+            };
+
+            if use_glsl3 {
+                let text_renderer = TextRendererProvider::Glsl3(Glsl3Renderer::new()?);
+                let rect_renderer = RectRenderer::new(ShaderVersion::Glsl3)?;
+                (text_renderer, rect_renderer)
+            } else {
+                let text_renderer =
+                    TextRendererProvider::Gles2(Gles2Renderer::new(allow_dsb, is_gles_context)?);
+                let rect_renderer = RectRenderer::new(ShaderVersion::Gles2)?;
+                (text_renderer, rect_renderer)
+            }
         };
 
-        let (text_renderer, rect_renderer) = if use_glsl3 {
-            let text_renderer = TextRendererProvider::Glsl3(Glsl3Renderer::new()?);
-            let rect_renderer = RectRenderer::new(ShaderVersion::Glsl3)?;
-            (text_renderer, rect_renderer)
-        } else {
-            let text_renderer =
-                TextRendererProvider::Gles2(Gles2Renderer::new(allow_dsb, is_gles_context)?);
-            let rect_renderer = RectRenderer::new(ShaderVersion::Gles2)?;
-            (text_renderer, rect_renderer)
-        };
+        // TRUEOS GL profile 0 is the fixed GLES2Pure AOT surface consumed by
+        // Alacritty.  This build deliberately has no GL3 fallback, extension
+        // probing, or dual-source blending path.
+        #[cfg(target_os = "trueos")]
+        let (text_renderer, rect_renderer) = (
+            TextRendererProvider::Gles2(Gles2Renderer::new(false, true)?),
+            RectRenderer::new(ShaderVersion::Gles2)?,
+        );
 
+        #[cfg(not(target_os = "trueos"))]
         // Enable debug logging for OpenGL as well.
         if log::max_level() >= LevelFilter::Debug && GlExtensions::contains("GL_KHR_debug") {
             debug!("Enabled debug logging for OpenGL");
@@ -184,6 +218,7 @@ impl Renderer {
             TextRendererProvider::Gles2(renderer) => {
                 renderer.draw_cells(size_info, glyph_cache, cells)
             },
+            #[cfg(not(target_os = "trueos"))]
             TextRendererProvider::Glsl3(renderer) => {
                 renderer.draw_cells(size_info, glyph_cache, cells)
             },
@@ -235,6 +270,7 @@ impl Renderer {
     {
         match &mut self.text_renderer {
             TextRendererProvider::Gles2(renderer) => renderer.with_loader(func),
+            #[cfg(not(target_os = "trueos"))]
             TextRendererProvider::Glsl3(renderer) => renderer.with_loader(func),
         }
     }
@@ -257,7 +293,12 @@ impl Renderer {
         // Activate regular state again.
         unsafe {
             // Reset blending strategy.
+            #[cfg(not(target_os = "trueos"))]
             gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
+            // GLES2Pure establishes its blend state before every text batch,
+            // so no dual-source blend factors are required after rect drawing.
+            #[cfg(target_os = "trueos")]
+            gl::BlendFunc(gl::ONE, gl::ZERO);
 
             // Restore viewport with padding.
             self.set_viewport(size_info);
@@ -279,28 +320,35 @@ impl Renderer {
 
     /// Get the context reset status.
     pub fn was_context_reset(&self) -> bool {
-        // If robustness is not supported, don't use its functions.
-        if !self.robustness {
-            return false;
-        }
+        #[cfg(target_os = "trueos")]
+        return false;
 
-        let status = unsafe { gl::GetGraphicsResetStatus() };
-        if status == gl::NO_ERROR {
-            false
-        } else {
-            let reason = match status {
-                gl::GUILTY_CONTEXT_RESET_KHR => "guilty",
-                gl::INNOCENT_CONTEXT_RESET_KHR => "innocent",
-                gl::UNKNOWN_CONTEXT_RESET_KHR => "unknown",
-                _ => "invalid",
-            };
+        #[cfg(not(target_os = "trueos"))]
+        {
+            // If robustness is not supported, don't use its functions.
+            if !self.robustness {
+                return false;
+            }
 
-            info!("GPU reset ({reason})");
+            let status = unsafe { gl::GetGraphicsResetStatus() };
+            if status == gl::NO_ERROR {
+                false
+            } else {
+                let reason = match status {
+                    gl::GUILTY_CONTEXT_RESET_KHR => "guilty",
+                    gl::INNOCENT_CONTEXT_RESET_KHR => "innocent",
+                    gl::UNKNOWN_CONTEXT_RESET_KHR => "unknown",
+                    _ => "invalid",
+                };
 
-            true
+                info!("GPU reset ({reason})");
+
+                true
+            }
         }
     }
 
+    #[cfg(not(target_os = "trueos"))]
     fn supports_robustness() -> bool {
         let mut notification_strategy = 0;
         if GlExtensions::contains("GL_KHR_robustness") {
@@ -344,13 +392,16 @@ impl Renderer {
         self.set_viewport(size_info);
         match &self.text_renderer {
             TextRendererProvider::Gles2(renderer) => renderer.resize(size_info),
+            #[cfg(not(target_os = "trueos"))]
             TextRendererProvider::Glsl3(renderer) => renderer.resize(size_info),
         }
     }
 }
 
+#[cfg(not(target_os = "trueos"))]
 struct GlExtensions;
 
+#[cfg(not(target_os = "trueos"))]
 impl GlExtensions {
     /// Check if the given `extension` is supported.
     ///
@@ -386,6 +437,7 @@ impl GlExtensions {
     }
 }
 
+#[cfg(not(target_os = "trueos"))]
 extern "system" fn gl_debug_log(
     _: gl::types::GLenum,
     _: gl::types::GLenum,

@@ -3,6 +3,8 @@ use std::fmt;
 
 use crate::gl;
 use crate::gl::types::*;
+#[cfg(target_os = "trueos")]
+use crate::renderer::aot::ProgramId;
 
 /// A wrapper for a shader program id, with automatic lifetime management.
 #[derive(Debug)]
@@ -11,6 +13,7 @@ pub struct ShaderProgram(GLuint);
 #[derive(Copy, Clone, Debug)]
 pub enum ShaderVersion {
     /// OpenGL 3.3 core shaders.
+    #[cfg(not(target_os = "trueos"))]
     Glsl3,
 
     /// OpenGL ES 2.0 shaders.
@@ -19,6 +22,7 @@ pub enum ShaderVersion {
 
 impl ShaderVersion {
     // Header to which we concatenate the entire shader. The newlines are required.
+    #[cfg(not(target_os = "trueos"))]
     fn shader_header(&self) -> &'static str {
         match self {
             Self::Glsl3 => "#version 330 core\n",
@@ -28,6 +32,7 @@ impl ShaderVersion {
 }
 
 impl ShaderProgram {
+    #[cfg(not(target_os = "trueos"))]
     pub fn new(
         shader_version: ShaderVersion,
         shader_header: Option<&str>,
@@ -56,14 +61,32 @@ impl ShaderProgram {
         Ok(program)
     }
 
+    /// Select an immutable Bakery program without exercising GL's dynamic
+    /// shader compiler/linker surface.  The TRUEOS GL backend reserves these
+    /// names and resolves them through the same AOT manifest.
+    #[cfg(target_os = "trueos")]
+    pub(crate) const fn aot(program: ProgramId) -> Self {
+        Self(program.gl_name())
+    }
+
     /// Get uniform location by name. Panic if failed.
     pub fn get_uniform_location(&self, name: &'static CStr) -> Result<GLint, ShaderError> {
-        // This call doesn't require `UseProgram`.
-        let ret = unsafe { gl::GetUniformLocation(self.id(), name.as_ptr()) };
-        if ret == -1 {
-            return Err(ShaderError::Uniform(name));
+        #[cfg(target_os = "trueos")]
+        {
+            return ProgramId::from_gl_name(self.id())
+                .and_then(|program| program.uniform_location(name))
+                .ok_or(ShaderError::Uniform(name));
         }
-        Ok(ret)
+
+        #[cfg(not(target_os = "trueos"))]
+        {
+            // This call doesn't require `UseProgram`.
+            let ret = unsafe { gl::GetUniformLocation(self.id(), name.as_ptr()) };
+            if ret == -1 {
+                return Err(ShaderError::Uniform(name));
+            }
+            Ok(ret)
+        }
     }
 
     /// Get the shader program id.
@@ -74,14 +97,19 @@ impl ShaderProgram {
 
 impl Drop for ShaderProgram {
     fn drop(&mut self) {
-        unsafe { gl::DeleteProgram(self.0) }
+        #[cfg(not(target_os = "trueos"))]
+        unsafe {
+            gl::DeleteProgram(self.0)
+        }
     }
 }
 
 /// A wrapper for a shader id, with automatic lifetime management.
+#[cfg(not(target_os = "trueos"))]
 #[derive(Debug)]
 struct Shader(GLuint);
 
+#[cfg(not(target_os = "trueos"))]
 impl Shader {
     fn new(
         shader_version: ShaderVersion,
@@ -129,12 +157,14 @@ impl Shader {
     }
 }
 
+#[cfg(not(target_os = "trueos"))]
 impl Drop for Shader {
     fn drop(&mut self) {
         unsafe { gl::DeleteShader(self.0) }
     }
 }
 
+#[cfg(not(target_os = "trueos"))]
 fn get_program_info_log(program: GLuint) -> String {
     // Get expected log length.
     let mut max_length: GLint = 0;
@@ -157,6 +187,7 @@ fn get_program_info_log(program: GLuint) -> String {
     String::from_utf8_lossy(&buf).to_string()
 }
 
+#[cfg(not(target_os = "trueos"))]
 fn get_shader_info_log(shader: GLuint) -> String {
     // Get expected log length.
     let mut max_length: GLint = 0;

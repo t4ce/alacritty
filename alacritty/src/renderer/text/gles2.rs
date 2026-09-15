@@ -10,17 +10,25 @@ use crate::display::SizeInfo;
 use crate::display::content::RenderableCell;
 use crate::gl;
 use crate::gl::types::*;
+use crate::renderer::Error;
+#[cfg(not(target_os = "trueos"))]
+use crate::renderer::GlExtensions;
+#[cfg(target_os = "trueos")]
+use crate::renderer::aot::ProgramId;
 use crate::renderer::shader::{ShaderProgram, ShaderVersion};
-use crate::renderer::{Error, GlExtensions};
 
 use super::atlas::{ATLAS_SIZE, Atlas};
+#[cfg(not(target_os = "trueos"))]
+use super::glsl3;
 use super::{
     Glyph, LoadGlyph, LoaderApi, RenderingGlyphFlags, RenderingPass, TextRenderApi,
-    TextRenderBatch, TextRenderer, TextShader, glsl3,
+    TextRenderBatch, TextRenderer, TextShader,
 };
 
 // Shader source.
+#[cfg(not(target_os = "trueos"))]
 const TEXT_SHADER_F: &str = include_str!("../../../res/gles2/text.f.glsl");
+#[cfg(not(target_os = "trueos"))]
 const TEXT_SHADER_V: &str = include_str!("../../../res/gles2/text.v.glsl");
 
 #[derive(Debug)]
@@ -33,13 +41,18 @@ pub struct Gles2Renderer {
     batch: Batch,
     current_atlas: usize,
     active_tex: GLuint,
+    #[cfg(not(target_os = "trueos"))]
     dual_source_blending: bool,
 }
 
 impl Gles2Renderer {
     pub fn new(allow_dsb: bool, is_gles_context: bool) -> Result<Self, Error> {
+        #[cfg(target_os = "trueos")]
+        let _ = allow_dsb;
+
         info!("Using OpenGL ES 2.0 renderer");
 
+        #[cfg(not(target_os = "trueos"))]
         let dual_source_blending = allow_dsb
             && (GlExtensions::contains("GL_EXT_blend_func_extended")
                 || GlExtensions::contains("GL_ARB_blend_func_extended"));
@@ -48,6 +61,7 @@ impl Gles2Renderer {
             info!("Running on OpenGL ES context");
         }
 
+        #[cfg(not(target_os = "trueos"))]
         if dual_source_blending {
             info!("Using dual source blending");
         }
@@ -153,6 +167,7 @@ impl Gles2Renderer {
             batch: Batch::new(),
             current_atlas: 0,
             active_tex: 0,
+            #[cfg(not(target_os = "trueos"))]
             dual_source_blending,
         })
     }
@@ -195,6 +210,7 @@ impl<'a> TextRenderer<'a> for Gles2Renderer {
             atlas: &mut self.atlas,
             current_atlas: &mut self.current_atlas,
             program: &mut self.program,
+            #[cfg(not(target_os = "trueos"))]
             dual_source_blending: self.dual_source_blending,
         });
 
@@ -343,6 +359,7 @@ pub struct RenderApi<'a> {
     atlas: &'a mut Vec<Atlas>,
     current_atlas: &'a mut usize,
     program: &'a mut TextShaderProgram,
+    #[cfg(not(target_os = "trueos"))]
     dual_source_blending: bool,
 }
 
@@ -398,10 +415,14 @@ impl TextRenderApi<Batch> for RenderApi<'_> {
             gl::DrawElements(gl::TRIANGLES, num_indices, gl::UNSIGNED_SHORT, ptr::null());
 
             self.program.set_rendering_pass(RenderingPass::SubpixelPass1);
+            #[cfg(not(target_os = "trueos"))]
             if self.dual_source_blending {
                 // Text rendering pass.
                 gl::BlendFunc(gl::SRC1_COLOR, gl::ONE_MINUS_SRC1_COLOR);
-            } else {
+            }
+
+            #[cfg(not(target_os = "trueos"))]
+            if !self.dual_source_blending {
                 // First text rendering pass.
                 gl::BlendFuncSeparate(gl::ZERO, gl::ONE_MINUS_SRC_COLOR, gl::ZERO, gl::ONE);
                 gl::DrawElements(gl::TRIANGLES, num_indices, gl::UNSIGNED_SHORT, ptr::null());
@@ -412,6 +433,21 @@ impl TextRenderApi<Batch> for RenderApi<'_> {
                 gl::DrawElements(gl::TRIANGLES, num_indices, gl::UNSIGNED_SHORT, ptr::null());
 
                 // Third text rendering pass.
+                self.program.set_rendering_pass(RenderingPass::SubpixelPass3);
+                gl::BlendFuncSeparate(gl::ONE, gl::ONE, gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
+            }
+
+            #[cfg(target_os = "trueos")]
+            {
+                // GLES2Pure's three-pass subpixel composition; no extension
+                // source, extension query, or dual-source blend factor exists.
+                gl::BlendFuncSeparate(gl::ZERO, gl::ONE_MINUS_SRC_COLOR, gl::ZERO, gl::ONE);
+                gl::DrawElements(gl::TRIANGLES, num_indices, gl::UNSIGNED_SHORT, ptr::null());
+
+                self.program.set_rendering_pass(RenderingPass::SubpixelPass2);
+                gl::BlendFuncSeparate(gl::ONE_MINUS_DST_ALPHA, gl::ONE, gl::ZERO, gl::ONE);
+                gl::DrawElements(gl::TRIANGLES, num_indices, gl::UNSIGNED_SHORT, ptr::null());
+
                 self.program.set_rendering_pass(RenderingPass::SubpixelPass3);
                 gl::BlendFuncSeparate(gl::ONE, gl::ONE, gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
             }
@@ -476,10 +512,19 @@ pub struct TextShaderProgram {
 
 impl TextShaderProgram {
     pub fn new(shader_version: ShaderVersion, dual_source_blending: bool) -> Result<Self, Error> {
-        let fragment_shader =
-            if dual_source_blending { &glsl3::TEXT_SHADER_F } else { &TEXT_SHADER_F };
+        #[cfg(target_os = "trueos")]
+        let _ = (shader_version, dual_source_blending);
 
-        let program = ShaderProgram::new(shader_version, None, TEXT_SHADER_V, fragment_shader)?;
+        #[cfg(not(target_os = "trueos"))]
+        let program = {
+            let fragment_shader =
+                if dual_source_blending { &glsl3::TEXT_SHADER_F } else { &TEXT_SHADER_F };
+
+            ShaderProgram::new(shader_version, None, TEXT_SHADER_V, fragment_shader)?
+        };
+
+        #[cfg(target_os = "trueos")]
+        let program = ShaderProgram::aot(ProgramId::TextPure);
 
         Ok(Self {
             u_projection: program.get_uniform_location(c"projection")?,

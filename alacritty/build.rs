@@ -6,6 +6,10 @@ use std::process::Command;
 use gl_generator::{Api, Fallbacks, GlobalGenerator, Profile, Registry};
 
 fn main() {
+    // TRUEOS is a custom target.  Register its `target_os` value when this
+    // crate is checked on a stock Rust toolchain, too.
+    println!("cargo::rustc-check-cfg=cfg(target_os, values(\"trueos\"))");
+
     let mut version = String::from(env!("CARGO_PKG_VERSION"));
     if let Some(commit_hash) = commit_hash() {
         version = format!("{version} ({commit_hash})");

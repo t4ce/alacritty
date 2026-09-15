@@ -6,7 +6,9 @@ use glutin::config::{ColorBufferType, Config, ConfigTemplateBuilder, GetGlConfig
 use glutin::context::{
     ContextApi, ContextAttributesBuilder, GlProfile, NotCurrentContext, Robustness, Version,
 };
-use glutin::display::{Display, DisplayApiPreference, DisplayFeatures, GetGlDisplay};
+#[cfg(not(target_os = "trueos"))]
+use glutin::display::DisplayFeatures;
+use glutin::display::{Display, DisplayApiPreference, GetGlDisplay};
 use glutin::error::Result as GlutinResult;
 use glutin::prelude::*;
 use glutin::surface::{Surface, SurfaceAttributesBuilder, WindowSurface};
@@ -111,6 +113,7 @@ pub fn create_gl_context(
 ) -> GlutinResult<NotCurrentContext> {
     let debug = log::max_level() >= LevelFilter::Debug;
 
+    #[cfg(not(target_os = "trueos"))]
     let apis = [
         (ContextApi::OpenGl(Some(Version::new(3, 3))), GlProfile::Core),
         // Try gles before OpenGL 2.1 as it tends to be more stable.
@@ -118,12 +121,21 @@ pub fn create_gl_context(
         (ContextApi::OpenGl(Some(Version::new(2, 1))), GlProfile::Compatibility),
     ];
 
+    // TRUEOS GL profile 0 is the Alacritty GLES2Pure AOT profile.  Do not
+    // negotiate desktop GL profiles which the backend deliberately omits.
+    #[cfg(target_os = "trueos")]
+    let apis = [(ContextApi::Gles(Some(Version::new(2, 0))), GlProfile::Core)];
+
+    #[cfg(not(target_os = "trueos"))]
     let robustness = gl_display.supported_features().contains(DisplayFeatures::CONTEXT_ROBUSTNESS);
+    #[cfg(not(target_os = "trueos"))]
     let robustness: &[Robustness] = if robustness {
         &[Robustness::RobustLoseContextOnReset, Robustness::NotRobust]
     } else {
         &[Robustness::NotRobust]
     };
+    #[cfg(target_os = "trueos")]
+    let robustness: &[Robustness] = &[Robustness::NotRobust];
 
     // Find the first context that builds without any errors.
     let mut error = None;

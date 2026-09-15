@@ -1,0 +1,75 @@
+{
+  "schema": "trueos-alacritty-gles2pure-aot-v1",
+  "profile": "Alacritty GLES2Pure AOT",
+  "shader_header": "#version 100\\n#define GLES2_RENDERER\\n",
+  "modules": [
+    {
+      "id": "text-pure-v",
+      "stage": "vertex",
+      "source": "../gles2/text.v.glsl",
+      "sha256": "99dcda4807af5ceb6eb2f6fd67509c0a4ec1fc6707328e48c4ca6f84acd31e7f"
+    },
+    {
+      "id": "text-pure-f",
+      "stage": "fragment",
+      "source": "../gles2/text.f.glsl",
+      "sha256": "32bdfb178e2e1e1ef3ada27848060bac9b691e626a675bcaaaa61c334173cd3a"
+    },
+    {
+      "id": "rect-v",
+      "stage": "vertex",
+      "source": "../rect.v.glsl",
+      "sha256": "28bac79e0a7008d70d324d334243a35c806a3e93bd5b16f79af2977ba9e5415d"
+    },
+    {
+      "id": "rect-normal-f",
+      "stage": "fragment",
+      "source": "../rect.f.glsl",
+      "sha256": "c53076301a0451dc93280607775fd8b66b2a9603ec5e03644b7c28f043245d14"
+    },
+    {
+      "id": "rect-undercurl-f",
+      "stage": "fragment",
+      "source": "../rect.f.glsl",
+      "prefix": "#define DRAW_UNDERCURL\\n",
+      "sha256": "1b9d3bc9cd25db6273bf6c825f3489acafffb0a38f4b6781774ae94a1e836a1c"
+    },
+    {
+      "id": "rect-dotted-f",
+      "stage": "fragment",
+      "source": "../rect.f.glsl",
+      "prefix": "#define DRAW_DOTTED\\n",
+      "sha256": "65591f694b00a8cae370161c1885ea6922fa34e11a1abafc8e3a6aaef9da64f3"
+    },
+    {
+      "id": "rect-dashed-f",
+      "stage": "fragment",
+      "source": "../rect.f.glsl",
+      "prefix": "#define DRAW_DASHED\\n",
+      "sha256": "0998423f04c90ba59efa273f7c312b2f35d1516931de86edd97a48a2be38bdb1"
+    }
+  ],
+  "programs": [
+    { "id": "TextPure", "vertex": "text-pure-v", "fragment": "text-pure-f" },
+    { "id": "RectNormal", "vertex": "rect-v", "fragment": "rect-normal-f" },
+    { "id": "RectUndercurl", "vertex": "rect-v", "fragment": "rect-undercurl-f" },
+    { "id": "RectDotted", "vertex": "rect-v", "fragment": "rect-dotted-f" },
+    { "id": "RectDashed", "vertex": "rect-v", "fragment": "rect-dashed-f" }
+  ],
+  "reflection": {
+    "TextPure": {
+      "projection": 0,
+      "renderingPass": 1,
+      "mask": 2
+    },
+    "Rect*": {
+      "cellWidth": 0,
+      "cellHeight": 1,
+      "paddingY": 2,
+      "paddingX": 3,
+      "underlinePosition": 4,
+      "underlineThickness": 5,
+      "undercurlPosition": 6
+    }
+  }
+}
