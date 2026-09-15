@@ -19,6 +19,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SendError, Sender};
 use std::time::{Duration, Instant};
+use std::time::Instant as StdInstant;
 use std::{env, f32, mem};
 
 use ahash::RandomState;
@@ -329,7 +330,9 @@ impl ApplicationHandler for Processor {
         }
 
         let control_flow = match self.scheduler.update() {
-            Some(instant) => ControlFlow::WaitUntil(instant),
+            Some(instant) => {
+                ControlFlow::WaitUntil(StdInstant::now() + instant.duration_since(Instant::now()))
+            }
             None => ControlFlow::Wait,
         };
         event_loop.set_control_flow(control_flow);

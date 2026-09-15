@@ -68,7 +68,6 @@ dependencies = [
  "windows-sys 0.59.0",
  "winit",
  "xdg",
- "yeslogic-fontconfig-sys",
 ]
 
 [[package]]

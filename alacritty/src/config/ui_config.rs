@@ -1,5 +1,6 @@
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
+use std::collections::HashMap as StdHashMap;
 use std::error::Error;
 use std::fmt::{self, Formatter};
 use std::mem;
@@ -136,7 +137,7 @@ impl UiConfig {
             working_directory,
             shell,
             drain_on_exit: false,
-            env: HashMap::new(),
+            env: StdHashMap::new(),
             #[cfg(target_os = "windows")]
             escape_args: false,
         }
