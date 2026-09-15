@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::{env, fs};
-
+use crate::config::monitor::ConfigMonitor;
 use log::info;
 #[cfg(windows)]
 use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, FreeConsole};
@@ -59,7 +59,6 @@ use crate::cli::MessageOptions;
 use crate::cli::SocketMessage;
 use crate::cli::{Options, Subcommands};
 use crate::config::UiConfig;
-use crate::config::monitor::ConfigMonitor;
 use crate::event::{EventLoopProxy, Processor};
 #[cfg(target_os = "macos")]
 use crate::macos::locale;
@@ -210,25 +209,6 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
 
     // Start event loop and block until shutdown.
     let result = processor.run(window_event_loop);
-
-    // `Processor` must be dropped before calling `FreeConsole`.
-    //
-    // This is needed for ConPTY backend. Otherwise a deadlock can occur.
-    // The cause:
-    //   - Drop for ConPTY will deadlock if the conout pipe has already been dropped
-    //   - ConPTY is dropped when the last of processor and window context are dropped, because both
-    //     of them own an Arc<ConPTY>
-    //
-    // The fix is to ensure that processor is dropped first. That way, when window context (i.e.
-    // PTY) is dropped, it can ensure ConPTY is dropped before the conout pipe in the PTY drop
-    // order.
-    //
-    // FIXME: Change PTY API to enforce the correct drop order with the typesystem.
-
-    // Terminate the config monitor.
-    if let Some(config_monitor) = processor.config_monitor.take() {
-        config_monitor.shutdown();
-    }
 
     // Without explicitly detaching the console cmd won't redraw it's prompt.
     #[cfg(windows)]

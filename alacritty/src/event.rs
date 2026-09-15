@@ -106,6 +106,26 @@ pub struct Processor {
     config: Rc<UiConfig>,
 }
 
+#[derive(Clone)]
+pub enum WinitEvent {
+    UserEvent(Event),
+    WindowEvent { event: WindowEvent },
+    AboutToWait,
+}
+
+impl From<Event> for WinitEvent {
+    fn from(event: Event) -> Self {
+        Self::UserEvent(event)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TouchEvent {
+    pub id: u64,
+    pub location: PhysicalPosition<f64>,
+    pub phase: TouchPhase,
+}
+
 impl Processor {
     /// Create a new event processor.
     pub fn new(
@@ -223,6 +243,16 @@ impl Processor {
                 | WindowEvent::DoubleTapGesture { .. }
                 | WindowEvent::TouchpadPressure { .. }
                 | WindowEvent::RotationGesture { .. }
+                | WindowEvent::PointerEntered { .. }
+                | WindowEvent::PinchGesture { .. }
+                | WindowEvent::PanGesture { .. }
+                | WindowEvent::DragLeft { .. }
+                | WindowEvent::Destroyed
+                | WindowEvent::ThemeChanged(_)
+                | WindowEvent::DragEntered { .. }
+                | WindowEvent::DragPosition { .. }
+                | WindowEvent::DragDropped { .. }
+                | WindowEvent::DataTransferReceived { .. }
                 | WindowEvent::PinchGesture { .. }
                 | WindowEvent::PanGesture { .. }
                 | WindowEvent::Destroyed
@@ -263,7 +293,7 @@ impl ApplicationHandler for Processor {
             &self.proxy,
             &mut self.clipboard,
             &mut self.scheduler,
-            WinitEvent::WindowEvent { window_id, event },
+            WinitEvent::WindowEvent { event },
         );
 
         if is_redraw {
@@ -314,6 +344,31 @@ impl ApplicationHandler for Processor {
             self.user_event(event_loop, event);
         }
     }
+
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        if self.config.debug.print_events {
+            info!(target: LOG_TARGET_WINIT, "About to wait");
+        }
+
+        for window_context in self.windows.values_mut() {
+            window_context.handle_event(
+                #[cfg(target_os = "macos")]
+                event_loop,
+                &self.proxy,
+                &mut self.clipboard,
+                &mut self.scheduler,
+                WinitEvent::AboutToWait,
+            );
+        }
+
+        let control_flow = match self.scheduler.update() {
+            Some(instant) => ControlFlow::WaitUntil(instant),
+            None => ControlFlow::Wait,
+        };
+        event_loop.set_control_flow(control_flow);
+    }
+
+    fn can_create_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {}
 }
 
 impl Processor {
@@ -517,7 +572,6 @@ impl Processor {
             _ => (),
         }
 
-        // SAFETY: drop the real clipboard before the event loop/display is torn down.
         self.clipboard = Clipboard::new_nop();
     }
 }
@@ -651,7 +705,7 @@ impl SearchState {
         self.direction
     }
 
-    /// Focused match during vi-less search.
+    /// Focused match during active search.
     pub fn focused_match(&self) -> Option<&Match> {
         self.focused_match.as_ref()
     }
@@ -1209,7 +1263,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             Direction::Left => *focused_match.end(),
         };
 
-        // Store the search origin with display offset by checking how far we need to scroll to it.
+        // Store origin and scroll back to the match.
         let old_display_offset = self.terminal.grid().display_offset() as i32;
         self.terminal.scroll_to_point(new_origin);
         let new_display_offset = self.terminal.grid().display_offset() as i32;
@@ -1220,7 +1274,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.search_state.origin = new_origin;
     }
 
-    /// Find the next search match.
+    /// Find the next regex match.
     fn search_next(&mut self, origin: Point, direction: Direction, side: Side) -> Option<Match> {
         self.search_state
             .dfas
@@ -1347,7 +1401,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         selection.ty = selection_type;
         self.update_selection(point, cell_side);
 
-        // Move vi mode cursor to mouse click position.
+        // Move vi cursor to mouse click position.
         if self.terminal().mode().contains(TermMode::VI) && !self.search_active() {
             self.terminal_mut().vi_mode_cursor.point = point;
         }
@@ -1396,7 +1450,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
             }
         }
 
-        // Find the beginning of the semantic word.
+        // Get the start of the word.
         let start = terminal.semantic_search_left(end);
 
         terminal.bounds_to_string(start, end)
@@ -1457,7 +1511,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         }
     }
 
-    /// Toggle the vi mode status.
+    /// Toggle the vi mode state.
     #[inline]
     fn toggle_vi_mode(&mut self) {
         let was_in_vi_mode = self.terminal.mode().contains(TermMode::VI);
@@ -1502,7 +1556,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.inline_search(direction);
     }
 
-    /// Jump to the next matching character in the line.
+    /// Jump to the previous matching character in the line.
     fn inline_search_previous(&mut self) {
         let direction = self.inline_search_state.direction.opposite();
         self.inline_search(direction);
@@ -1563,7 +1617,7 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
             self.search_reset_state();
             self.search_state.dfas = None;
         } else {
-            // Create search dfas for the new regex string.
+            // Create search DFAs.
             self.search_state.dfas = RegexSearch::new(regex).ok();
 
             // Update search highlighting.
@@ -1664,7 +1718,7 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
         self.search_state.focused_match = None;
     }
 
-    /// Update the cursor blinking state.
+    /// Update cursor blinking state.
     fn update_cursor_blinking(&mut self) {
         // Get config cursor style.
         let mut cursor_style = self.config.cursor.style;
@@ -1679,7 +1733,7 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
         blinking &= (vi_mode || self.terminal().mode().contains(TermMode::SHOW_CURSOR))
             && self.display().ime.preedit().is_none();
 
-        // Update cursor blinking state.
+        // Update blinking timers.
         let window_id = self.display.window.id();
         self.scheduler.unschedule(TimerId::new(Topic::BlinkCursor, window_id));
         self.scheduler.unschedule(TimerId::new(Topic::BlinkTimeout, window_id));
@@ -1713,7 +1767,6 @@ impl<'a, N: Notify + 'a, T: EventListener> ActionContext<'a, N, T> {
         let window_id = self.display.window.id();
         let event = Event::new(EventType::BlinkCursorTimeout, window_id);
         let timer_id = TimerId::new(Topic::BlinkTimeout, window_id);
-
         self.scheduler.schedule(event, blinking_timeout, false, timer_id);
     }
 
@@ -1982,7 +2035,7 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                 | EventType::CreateWindow(_)
                 | EventType::Frame => (),
             },
-            WinitEvent::WindowEvent { event, .. } => {
+            WinitEvent::WindowEvent { event } => {
                 match event {
                     WindowEvent::CloseRequested => {
                         // User asked to close the window, so no need to hold it.
@@ -2074,6 +2127,16 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     WindowEvent::Occluded(occluded) => {
                         *self.ctx.occluded = occluded;
                     },
+                    WindowEvent::PointerLeft { kind, position, .. } => {
+                        if let winit::event::PointerKind::Touch(finger_id) = kind {
+                            self.touch(TouchEvent {
+                                id: finger_id.into_raw() as u64,
+                                location: position.unwrap_or_default(),
+                                phase: TouchPhase::Ended,
+                            });
+                            return;
+                        }
+                        self.ctx.mouse.inside_text_area = false;
                     WindowEvent::PointerLeft { kind, .. } => {
                         if !matches!(kind, PointerKind::Touch(_)) {
                             self.ctx.mouse.inside_text_area = false;
@@ -2108,6 +2171,25 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             self.ctx.display.ime.set_enabled(false);
                             *self.ctx.dirty = true;
                         },
+                        Ime::DeleteSurrounding { .. } => (),
+                    },
+                    WindowEvent::KeyboardInput { is_synthetic: true, .. }
+                    | WindowEvent::ActivationTokenDone { .. }
+                    | WindowEvent::DoubleTapGesture { .. }
+                    | WindowEvent::TouchpadPressure { .. }
+                    | WindowEvent::RotationGesture { .. }
+                    | WindowEvent::PointerEntered { .. }
+                    | WindowEvent::PinchGesture { .. }
+                    | WindowEvent::PanGesture { .. }
+                    | WindowEvent::DragLeft { .. }
+                    | WindowEvent::Destroyed
+                    | WindowEvent::ThemeChanged(_)
+                    | WindowEvent::DragEntered { .. }
+                    | WindowEvent::DragPosition { .. }
+                    | WindowEvent::DragDropped { .. }
+                    | WindowEvent::DataTransferReceived { .. }
+                    | WindowEvent::RedrawRequested
+                    | WindowEvent::Moved(_) => (),
                         // Alacritty does not currently provide surrounding-text state to IMEs.
                         Ime::DeleteSurrounding { .. } => (),
                     },

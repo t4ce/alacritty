@@ -410,7 +410,7 @@ impl WindowContext {
     ) {
         match event {
             WinitEvent::AboutToWait
-            | WinitEvent::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
+            | WinitEvent::WindowEvent { event: WindowEvent::RedrawRequested } => {
                 // Skip further event handling with no staged updates.
                 if self.event_queue.is_empty() {
                     return;
