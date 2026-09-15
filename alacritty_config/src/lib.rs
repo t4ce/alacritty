@@ -1,4 +1,7 @@
+#[cfg(not(target_os = "trueos"))]
 use std::collections::HashMap;
+#[cfg(target_os = "trueos")]
+use trueos::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
 
