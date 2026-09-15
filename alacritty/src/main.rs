@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::{env, fs};
-
+use crate::config::monitor::ConfigMonitor;
 use log::info;
 #[cfg(windows)]
 use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, FreeConsole};
