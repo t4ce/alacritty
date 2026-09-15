@@ -29,9 +29,10 @@ use log::{debug, error, info, warn};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalPosition;
 use winit::event::{
-    ButtonSource, ElementState, Ime, Modifiers, MouseButton, PointerSource, StartCause, TouchPhase,
-    WindowEvent,
+    ButtonSource, ElementState, Ime, Modifiers, MouseButton, PointerKind, PointerSource,
+    TouchPhase, WindowEvent,
 };
+use winit::event_loop::run_on_demand::EventLoopExtRunOnDemand;
 use winit::event_loop::{
     ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy as WinitEventLoopProxy,
 };
@@ -223,8 +224,14 @@ impl Processor {
     /// Run the event loop.
     ///
     /// The result is exit code generate from the loop.
-    pub fn run(self, event_loop: EventLoop) -> Result<(), Box<dyn Error>> {
-        event_loop.run_app(self).map_err(Into::into)
+    pub fn run(&mut self, mut event_loop: EventLoop) -> Result<(), Box<dyn Error>> {
+        let result = event_loop.run_app_on_demand(&mut *self);
+        self.cleanup();
+
+        match self.initial_window_error.take() {
+            Some(initial_window_error) => Err(initial_window_error),
+            _ => result.map_err(Into::into),
+        }
     }
 
     /// Check if an event is irrelevant and can be skipped.
@@ -246,6 +253,10 @@ impl Processor {
                 | WindowEvent::DragPosition { .. }
                 | WindowEvent::DragDropped { .. }
                 | WindowEvent::DataTransferReceived { .. }
+                | WindowEvent::PinchGesture { .. }
+                | WindowEvent::PanGesture { .. }
+                | WindowEvent::Destroyed
+                | WindowEvent::ThemeChanged(_)
                 | WindowEvent::Moved(_)
         )
     }
@@ -253,22 +264,6 @@ impl Processor {
 
 impl ApplicationHandler for Processor {
     fn resumed(&mut self, _event_loop: &dyn ActiveEventLoop) {}
-
-    fn new_events(&mut self, event_loop: &dyn ActiveEventLoop, cause: StartCause) {
-        if cause != StartCause::Init || self.cli_options.daemon {
-            return;
-        }
-
-        if let Some(window_options) = self.initial_window_options.take() {
-            if let Err(err) = self.create_initial_window(event_loop, window_options) {
-                self.initial_window_error = Some(err);
-                event_loop.exit();
-                return;
-            }
-        }
-
-        info!("Initialisation complete");
-    }
 
     fn window_event(
         &mut self,
@@ -304,6 +299,44 @@ impl ApplicationHandler for Processor {
         if is_redraw {
             window_context.draw(&mut self.scheduler);
         }
+    }
+
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        if self.cli_options.daemon {
+            return;
+        }
+
+        if let Some(window_options) = self.initial_window_options.take() {
+            if let Err(err) = self.create_initial_window(event_loop, window_options) {
+                self.initial_window_error = Some(err);
+                event_loop.exit();
+                return;
+            }
+            info!("Initialisation complete");
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        if self.config.debug.print_events {
+            info!(target: LOG_TARGET_WINIT, "About to wait");
+        }
+
+        for window_context in self.windows.values_mut() {
+            window_context.handle_event(
+                #[cfg(target_os = "macos")]
+                event_loop,
+                &self.proxy,
+                &mut self.clipboard,
+                &mut self.scheduler,
+                WinitEvent::AboutToWait,
+            );
+        }
+
+        let control_flow = match self.scheduler.update() {
+            Some(instant) => ControlFlow::WaitUntil(instant),
+            None => ControlFlow::Wait,
+        };
+        event_loop.set_control_flow(control_flow);
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
@@ -521,8 +554,8 @@ impl Processor {
     }
 }
 
-impl Drop for Processor {
-    fn drop(&mut self) {
+impl Processor {
+    fn cleanup(&mut self) {
         if self.config.debug.print_events {
             info!("Exiting the event loop");
         }
@@ -531,6 +564,7 @@ impl Drop for Processor {
             #[cfg(not(target_os = "macos"))]
             Some(glutin::display::Display::Egl(display)) => {
                 self.windows.clear();
+                // SAFETY: all windows and their contexts have been destroyed first.
                 unsafe {
                     display.terminate();
                 }
@@ -540,6 +574,34 @@ impl Drop for Processor {
 
         self.clipboard = Clipboard::new_nop();
     }
+}
+
+impl Drop for Processor {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
+}
+
+/// Internal event envelope replacing winit's removed generic `Event<T>`.
+#[derive(Debug, Clone)]
+pub enum WinitEvent {
+    WindowEvent { window_id: WindowId, event: WindowEvent },
+    UserEvent(Event),
+    AboutToWait,
+}
+
+impl From<Event> for WinitEvent {
+    fn from(event: Event) -> Self {
+        Self::UserEvent(event)
+    }
+}
+
+/// Touch data reconstructed from winit's unified pointer events.
+#[derive(Debug, Clone, Copy)]
+pub struct TouchEvent {
+    pub phase: TouchPhase,
+    pub location: PhysicalPosition<f64>,
+    pub id: u64,
 }
 
 /// Alacritty events.
@@ -2007,32 +2069,37 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                         self.key_input(event);
                     },
                     WindowEvent::ModifiersChanged(modifiers) => self.modifiers_input(modifiers),
-                    WindowEvent::PointerButton { state, button, position, .. } => {
-                        self.ctx.window().set_mouse_visible(true);
-                        match button {
-                            ButtonSource::Mouse(button) => self.mouse_input(state, button),
-                            ButtonSource::Touch { finger_id, .. } => self.touch(TouchEvent {
-                                id: finger_id.into_raw() as u64,
+                    WindowEvent::PointerButton { state, button, position, .. } => match button {
+                        ButtonSource::Touch { finger_id, .. } => {
+                            let phase = if state == ElementState::Pressed {
+                                TouchPhase::Started
+                            } else {
+                                TouchPhase::Ended
+                            };
+                            self.touch(TouchEvent {
+                                phase,
                                 location: position,
-                                phase: if state == ElementState::Pressed {
-                                    TouchPhase::Started
-                                } else {
-                                    TouchPhase::Ended
-                                },
-                            }),
-                            _ => (),
-                        }
+                                id: finger_id.into_raw() as u64,
+                            });
+                        },
+                        button => {
+                            self.ctx.window().set_mouse_visible(true);
+                            self.mouse_moved(position);
+                            if let Some(button) = button.mouse_button() {
+                                self.mouse_input(state, button);
+                            }
+                        },
                     },
-                    WindowEvent::PointerMoved { position, source, .. } => {
-                        self.ctx.window().set_mouse_visible(true);
-                        match source {
-                            PointerSource::Touch { finger_id, .. } => self.touch(TouchEvent {
-                                id: finger_id.into_raw() as u64,
-                                location: position,
-                                phase: TouchPhase::Moved,
-                            }),
-                            _ => self.mouse_moved(position),
-                        }
+                    WindowEvent::PointerMoved { position, source, .. } => match source {
+                        PointerSource::Touch { finger_id, .. } => self.touch(TouchEvent {
+                            phase: TouchPhase::Moved,
+                            location: position,
+                            id: finger_id.into_raw() as u64,
+                        }),
+                        _ => {
+                            self.ctx.window().set_mouse_visible(true);
+                            self.mouse_moved(position);
+                        },
                     },
                     WindowEvent::MouseWheel { delta, phase, .. } => {
                         self.ctx.window().set_mouse_visible(true);
@@ -2070,9 +2137,13 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                             return;
                         }
                         self.ctx.mouse.inside_text_area = false;
+                    WindowEvent::PointerLeft { kind, .. } => {
+                        if !matches!(kind, PointerKind::Touch(_)) {
+                            self.ctx.mouse.inside_text_area = false;
 
-                        if self.ctx.display().highlighted_hint.is_some() {
-                            *self.ctx.dirty = true;
+                            if self.ctx.display().highlighted_hint.is_some() {
+                                *self.ctx.dirty = true;
+                            }
                         }
                     },
                     WindowEvent::Ime(ime) => match ime {
@@ -2119,6 +2190,9 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     | WindowEvent::DataTransferReceived { .. }
                     | WindowEvent::RedrawRequested
                     | WindowEvent::Moved(_) => (),
+                        // Alacritty does not currently provide surrounding-text state to IMEs.
+                        Ime::DeleteSurrounding { .. } => (),
+                    },
                     _ => (),
                 }
             },

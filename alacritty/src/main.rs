@@ -138,8 +138,8 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
     let (event_proxy, event_rx) = EventLoopProxy::new(window_event_loop.create_proxy());
 
     // Initialize the logger as soon as possible as to capture output from other subsystems.
-    let log_file = logging::initialize(&options, event_proxy.clone())
-        .expect("Unable to initialize logger");
+    let log_file =
+        logging::initialize(&options, event_proxy.clone()).expect("Unable to initialize logger");
 
     info!("Welcome to Alacritty");
     info!("Version {}", env!("VERSION"));
@@ -205,7 +205,7 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
     };
 
     // Event processor.
-    let processor = Processor::new(config, options, &window_event_loop, event_proxy, event_rx);
+    let mut processor = Processor::new(config, options, &window_event_loop, event_proxy, event_rx);
 
     // Start event loop and block until shutdown.
     let result = processor.run(window_event_loop);
