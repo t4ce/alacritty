@@ -27,7 +27,7 @@ ahash = { version = "0.8.6", features = ["no-rng"] }
 bitflags = "2.2.1"
 clap = { version = "4.2.7", features = ["derive", "env"] }
 copypasta = { version = "0.10.1", default-features = false }
-crossfont = "0.8.1"
+crossfont = { path = "../../TRUEOS-Blueprints/vendor/crossfont" }
 glutin = { version = "0.32.2", default-features = false, features = ["egl", "wgl"] }
 home = "0.5.5"
 libc = "0.2"
@@ -61,7 +61,7 @@ png = { version = "0.17.5", default-features = false, optional = true }
 # Crossfont's Unix backend uses Fontconfig.  Enable its supported dynamic
 # loader path for TRUEOS so building does not require a host pkg-config
 # sysroot.  A TRUEOS Fontconfig service/library is still required at runtime.
-yeslogic-fontconfig-sys = { version = "5.0.0", features = ["dlopen"] }
+yeslogic-fontconfig-sys = { version = "6.0.0", features = ["dlopen"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.1"
