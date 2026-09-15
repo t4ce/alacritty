@@ -536,7 +536,7 @@ impl Processor {
         }
 
         match self.gl_config.take().map(|config| config.display()) {
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "trueos")))]
             Some(glutin::display::Display::Egl(display)) => {
                 self.windows.clear();
                 // SAFETY: all windows and their contexts have been destroyed first.

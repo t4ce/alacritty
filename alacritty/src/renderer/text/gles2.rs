@@ -48,7 +48,7 @@ pub struct Gles2Renderer {
 impl Gles2Renderer {
     pub fn new(allow_dsb: bool, is_gles_context: bool) -> Result<Self, Error> {
         #[cfg(target_os = "trueos")]
-        let _ = allow_dsb;
+        let dual_source_blending = false;
 
         info!("Using OpenGL ES 2.0 renderer");
 
