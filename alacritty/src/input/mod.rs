@@ -754,6 +754,8 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
                     _ => (),
                 }
             },
+            // Ignore future scroll delta formats until they can be mapped to terminal scrolling.
+            _ => (),
         }
     }
 

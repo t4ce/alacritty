@@ -43,7 +43,7 @@ tempfile = "3.12.0"
 toml.workspace = true
 toml_edit.workspace = true
 unicode-width = "0.2.0"
-winit = { version = "0.30.9", default-features = false, features = ["rwh_06", "serde"] }
+winit = { path = "../../TRUEOS-Blueprints/vendor/winit/winit", default-features = false, features = ["serde"] }
 
 [build-dependencies]
 gl_generator = "0.14.0"
@@ -56,6 +56,12 @@ xdg = "3.0.0"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 png = { version = "0.17.5", default-features = false, optional = true }
+
+[target.'cfg(target_os = "trueos")'.dependencies]
+# Crossfont's Unix backend uses Fontconfig.  Enable its supported dynamic
+# loader path for TRUEOS so building does not require a host pkg-config
+# sysroot.  A TRUEOS Fontconfig service/library is still required at runtime.
+yeslogic-fontconfig-sys = { version = "5.0.0", features = ["dlopen"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.1"
@@ -87,6 +93,9 @@ embed-resource = "3.0.2"
 
 [features]
 default = ["wayland", "x11"]
+# TRUEOS provides Winit's UI4 backend directly.  Do not pull Linux display
+# stacks when `trueos-blueprint` selects its no-default-features build.
+trueos-blueprint = ["glutin/trueos"]
 x11 = [
     "copypasta/x11",
     "winit/x11",
@@ -99,6 +108,5 @@ wayland = [
     "glutin/wayland",
     "winit/wayland",
     "winit/wayland-dlopen",
-    "winit/wayland-csd-adwaita-crossfont",
 ]
 nightly = []
