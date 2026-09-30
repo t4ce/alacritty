@@ -1,7 +1,7 @@
 {
   "schema": "trueos-alacritty-gles2pure-aot-v1",
   "profile": "Alacritty GLES2Pure AOT",
-  "shader_header": "#version 100\\n#define GLES2_RENDERER\\n",
+  "shader_header": "#version 100\n#define GLES2_RENDERER\n",
   "modules": [
     {
       "id": "text-pure-v",
@@ -31,21 +31,21 @@
       "id": "rect-undercurl-f",
       "stage": "fragment",
       "source": "../rect.f.glsl",
-      "prefix": "#define DRAW_UNDERCURL\\n",
+      "prefix": "#define DRAW_UNDERCURL\n",
       "sha256": "1b9d3bc9cd25db6273bf6c825f3489acafffb0a38f4b6781774ae94a1e836a1c"
     },
     {
       "id": "rect-dotted-f",
       "stage": "fragment",
       "source": "../rect.f.glsl",
-      "prefix": "#define DRAW_DOTTED\\n",
+      "prefix": "#define DRAW_DOTTED\n",
       "sha256": "65591f694b00a8cae370161c1885ea6922fa34e11a1abafc8e3a6aaef9da64f3"
     },
     {
       "id": "rect-dashed-f",
       "stage": "fragment",
       "source": "../rect.f.glsl",
-      "prefix": "#define DRAW_DASHED\\n",
+      "prefix": "#define DRAW_DASHED\n",
       "sha256": "0998423f04c90ba59efa273f7c312b2f35d1516931de86edd97a48a2be38bdb1"
     }
   ],

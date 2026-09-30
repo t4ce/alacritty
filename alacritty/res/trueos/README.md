@@ -12,3 +12,9 @@ The runtime program names and uniform locations are defined by the generated
 manifest and mirrored by `src/renderer/aot.rs` until the Bakery owns that Rust
 output.  A change to one of the GLSL sources must refresh this input file and
 the corresponding Bakery artifacts together.
+
+Run `python3 alacritty/res/trueos/verify_input.py` from the repository root
+before baking. It checks the exact UTF-8 bytes formed by the parsed JSON
+header, optional define, and GLSL source, then validates all seven stage
+hashes and five program links. The JSON `\n` escapes represent newline bytes;
+the Bakery must not pass literal backslash-n text to the GLSL compiler.
