@@ -1,5 +1,5 @@
+use crate::font::{GlyphKey, RasterizedGlyph};
 use bitflags::bitflags;
-use crossfont::{GlyphKey, RasterizedGlyph};
 
 use alacritty_terminal::term::cell::Flags;
 
@@ -9,6 +9,7 @@ use crate::gl;
 use crate::gl::types::*;
 
 mod atlas;
+#[cfg(not(target_os = "trueos"))]
 mod builtin_font;
 mod gles2;
 #[cfg(not(target_os = "trueos"))]

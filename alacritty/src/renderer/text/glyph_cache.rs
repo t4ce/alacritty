@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use ahash::RandomState;
-use crossfont::{
-    Error as RasterizerError, FontDesc, FontKey, GlyphKey, Metrics, Rasterize, RasterizedGlyph,
-    Rasterizer, Size, Slant, Style, Weight,
+use crate::font::{
+    Error as RasterizerError, FontDesc, FontKey, GlyphKey, Metrics, RasterizedGlyph, Rasterizer,
+    Size, Slant, Style, Weight,
 };
+use ahash::RandomState;
 use log::{error, info};
 use unicode_width::UnicodeWidthChar;
 
@@ -12,7 +12,10 @@ use crate::config::font::{Font, FontDescription};
 use crate::config::ui_config::Delta;
 use crate::gl::types::*;
 
+#[cfg(not(target_os = "trueos"))]
 use super::builtin_font;
+#[cfg(not(target_os = "trueos"))]
+use crate::font::Rasterize;
 
 /// `LoadGlyph` allows for copying a rasterized glyph into graphics memory.
 pub trait LoadGlyph {
@@ -63,7 +66,7 @@ pub struct GlyphCache {
     pub bold_italic_key: FontKey,
 
     /// Font size.
-    pub font_size: crossfont::Size,
+    pub font_size: crate::font::Size,
 
     /// Font offset.
     font_offset: Delta<i8>,
@@ -79,7 +82,7 @@ pub struct GlyphCache {
 }
 
 impl GlyphCache {
-    pub fn new(mut rasterizer: Rasterizer, font: &Font) -> Result<GlyphCache, crossfont::Error> {
+    pub fn new(mut rasterizer: Rasterizer, font: &Font) -> Result<GlyphCache, crate::font::Error> {
         let (regular, bold, italic, bold_italic) = Self::compute_font_keys(font, &mut rasterizer)?;
 
         let metrics = GlyphCache::load_font_metrics(&mut rasterizer, font, regular)?;
@@ -103,10 +106,11 @@ impl GlyphCache {
         rasterizer: &mut Rasterizer,
         font: &Font,
         key: FontKey,
-    ) -> Result<Metrics, crossfont::Error> {
+    ) -> Result<Metrics, crate::font::Error> {
         // Need to load at least one glyph for the face before calling metrics.
         // The glyph requested here ('m' at the time of writing) has no special
         // meaning.
+        #[cfg(not(target_os = "trueos"))]
         rasterizer.get_glyph(GlyphKey { font_key: key, character: 'm', size: font.size() })?;
 
         let mut metrics = rasterizer.metrics(key, font.size())?;
@@ -127,7 +131,7 @@ impl GlyphCache {
     fn compute_font_keys(
         font: &Font,
         rasterizer: &mut Rasterizer,
-    ) -> Result<(FontKey, FontKey, FontKey, FontKey), crossfont::Error> {
+    ) -> Result<(FontKey, FontKey, FontKey, FontKey), crate::font::Error> {
         let size = font.size();
 
         // Load regular font.
@@ -166,7 +170,7 @@ impl GlyphCache {
         rasterizer: &mut Rasterizer,
         description: &FontDesc,
         size: Size,
-    ) -> Result<FontKey, crossfont::Error> {
+    ) -> Result<FontKey, crate::font::Error> {
         match rasterizer.load_font(description, size) {
             Ok(font) => Ok(font),
             Err(err) => {
@@ -208,6 +212,7 @@ impl GlyphCache {
 
         // Rasterize the glyph using the built-in font for special characters or the user's font
         // for everything else.
+        #[cfg(not(target_os = "trueos"))]
         let rasterized = self
             .builtin_box_drawing
             .then(|| {
@@ -221,7 +226,12 @@ impl GlyphCache {
             .flatten()
             .map_or_else(|| self.rasterizer.get_glyph(glyph_key), Ok);
 
+        #[cfg(target_os = "trueos")]
+        let rasterized = self.rasterizer.get_glyph(glyph_key);
+
         let glyph = match rasterized {
+            #[cfg(target_os = "trueos")]
+            Err(RasterizerError::Pending) => return self.load_glyph(loader, Default::default()),
             Ok(rasterized) => self.load_glyph(loader, rasterized),
             // Load fallback glyph.
             Err(RasterizerError::MissingGlyph(rasterized)) if show_missing => {
@@ -237,11 +247,22 @@ impl GlyphCache {
                     glyph
                 }
             },
-            Err(_) => self.load_glyph(loader, Default::default()),
+            Err(err) => {
+                #[cfg(target_os = "trueos")]
+                error!("Native glyph {:?}: {err}", glyph_key.character);
+                #[cfg(not(target_os = "trueos"))]
+                let _ = err;
+                self.load_glyph(loader, Default::default())
+            },
         };
 
         // Cache rasterized glyph.
         *self.cache.entry(glyph_key).or_insert(glyph)
+    }
+
+    #[cfg(target_os = "trueos")]
+    pub fn take_redraw_request(&mut self) -> bool {
+        self.rasterizer.take_redraw_request()
     }
 
     /// Load glyph into the atlas.
@@ -280,7 +301,7 @@ impl GlyphCache {
     ///
     /// NOTE: To reload the renderers's fonts [`Self::reset_glyph_cache`] should be called
     /// afterwards.
-    pub fn update_font_size(&mut self, font: &Font) -> Result<(), crossfont::Error> {
+    pub fn update_font_size(&mut self, font: &Font) -> Result<(), crate::font::Error> {
         // Update dpi scaling.
         self.font_offset = font.offset;
         self.glyph_offset = font.glyph_offset;
@@ -304,7 +325,7 @@ impl GlyphCache {
         Ok(())
     }
 
-    pub fn font_metrics(&self) -> crossfont::Metrics {
+    pub fn font_metrics(&self) -> crate::font::Metrics {
         self.metrics
     }
 

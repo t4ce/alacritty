@@ -23,7 +23,9 @@ use winit::dpi::PhysicalSize;
 use winit::keyboard::ModifiersState;
 use winit::raw_window_handle::RawWindowHandle;
 
-use crossfont::{Rasterize, Rasterizer, Size as FontSize};
+#[cfg(not(target_os = "trueos"))]
+use crate::font::Rasterize;
+use crate::font::{Rasterizer, Size as FontSize};
 use unicode_width::UnicodeWidthChar;
 
 use alacritty_terminal::event::{EventListener, OnResize, WindowSize};
@@ -85,7 +87,7 @@ pub enum Error {
     Window(window::Error),
 
     /// Error dealing with fonts.
-    Font(crossfont::Error),
+    Font(crate::font::Error),
 
     /// Error in renderer.
     Render(renderer::Error),
@@ -122,8 +124,8 @@ impl From<window::Error> for Error {
     }
 }
 
-impl From<crossfont::Error> for Error {
-    fn from(val: crossfont::Error) -> Self {
+impl From<crate::font::Error> for Error {
+    fn from(val: crate::font::Error) -> Self {
         Error::Font(val)
     }
 }
@@ -409,7 +411,18 @@ impl Display {
         let raw_window_handle = window.raw_window_handle();
 
         let scale_factor = window.scale_factor as f32;
+        #[cfg(not(target_os = "trueos"))]
         let rasterizer = Rasterizer::new()?;
+        #[cfg(target_os = "trueos")]
+        let rasterizer = match raw_window_handle {
+            RawWindowHandle::Trueos(handle) => Rasterizer::for_window(handle.window.get())?,
+            _ => {
+                return Err(crate::font::Error::PlatformError(
+                    "native font requires a TRUEOS window".into(),
+                )
+                .into());
+            },
+        };
 
         let font_size = config.font.size().scale(scale_factor);
         debug!("Loading \"{}\" font", &config.font.normal().family);
@@ -509,9 +522,13 @@ impl Display {
         let mut damage_tracker = DamageTracker::new(size_info.screen_lines(), size_info.columns());
         damage_tracker.debug = config.debug.highlight_damage;
 
-        // Disable vsync.
-        if let Err(err) = surface.set_swap_interval(&context, SwapInterval::DontWait) {
-            info!("Failed to disable vsync: {err}");
+        // UI4 owns presentation cadence on TRUEOS.
+        #[cfg(target_os = "trueos")]
+        let swap_interval = SwapInterval::Wait(std::num::NonZeroU32::new(1).unwrap());
+        #[cfg(not(target_os = "trueos"))]
+        let swap_interval = SwapInterval::DontWait;
+        if let Err(err) = surface.set_swap_interval(&context, swap_interval) {
+            info!("Failed to set swap interval: {err}");
         }
 
         Ok(Self {
@@ -1029,6 +1046,10 @@ impl Display {
 
         // Clearing debug highlights from the previous frame requires full redraw.
         self.swap_buffers();
+        #[cfg(target_os = "trueos")]
+        if self.glyph_cache.take_redraw_request() {
+            self.window.request_redraw();
+        }
 
         if matches!(self.raw_window_handle, RawWindowHandle::Xcb(_) | RawWindowHandle::Xlib(_)) {
             // On X11 `swap_buffers` does not block for vsync. However the next OpenGl command
@@ -1606,7 +1627,7 @@ impl FrameTimer {
 ///
 /// This will return a tuple of the cell width and height.
 #[inline]
-fn compute_cell_size(config: &UiConfig, metrics: &crossfont::Metrics) -> (f32, f32) {
+fn compute_cell_size(config: &UiConfig, metrics: &crate::font::Metrics) -> (f32, f32) {
     let offset_x = f64::from(config.font.offset.x);
     let offset_y = f64::from(config.font.offset.y);
     (

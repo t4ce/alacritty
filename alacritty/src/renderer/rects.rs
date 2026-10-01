@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::mem;
 
 use ahash::RandomState;
-use crossfont::Metrics;
+use crate::font::Metrics;
 use log::info;
 
 use alacritty_terminal::grid::Dimensions;

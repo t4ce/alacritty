@@ -23,7 +23,7 @@ use std::time::Instant as StdInstant;
 use std::{env, f32, mem};
 
 use ahash::RandomState;
-use crossfont::Size as FontSize;
+use crate::font::Size as FontSize;
 use glutin::config::Config as GlutinConfig;
 use glutin::display::GetGlDisplay;
 use log::{debug, error, info, warn};

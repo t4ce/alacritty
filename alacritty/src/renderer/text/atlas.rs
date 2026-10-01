@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ptr;
 
-use crossfont::{BitmapBuffer, RasterizedGlyph};
+use crate::font::{BitmapBuffer, RasterizedGlyph};
 
 use crate::gl;
 use crate::gl::types::*;
@@ -33,6 +33,8 @@ pub const ATLAS_SIZE: i32 = 1024;
 pub struct Atlas {
     /// Texture id for this atlas.
     id: GLuint,
+    #[cfg(target_os = "trueos")]
+    native_textures: Vec<GLuint>,
 
     /// Width of atlas.
     width: i32,
@@ -100,6 +102,8 @@ impl Atlas {
 
         Self {
             id,
+            #[cfg(target_os = "trueos")]
+            native_textures: Vec::new(),
             width: size,
             height: size,
             row_extent: 0,
@@ -110,6 +114,12 @@ impl Atlas {
     }
 
     pub fn clear(&mut self) {
+        #[cfg(target_os = "trueos")]
+        for texture in self.native_textures.drain(..) {
+            unsafe {
+                gl::DeleteTextures(1, &texture);
+            }
+        }
         self.row_extent = 0;
         self.row_baseline = 0;
         self.row_tallest = 0;
@@ -173,6 +183,8 @@ impl Atlas {
                         (gl::RGB, Cow::Borrowed(buffer))
                     }
                 },
+                #[cfg(target_os = "trueos")]
+                BitmapBuffer::Native(_) => unreachable!("native glyphs bypass the CPU atlas"),
                 BitmapBuffer::Rgba(buffer) => {
                     multicolor = true;
                     (gl::RGBA, Cow::Borrowed(buffer))
@@ -254,6 +266,33 @@ impl Atlas {
         current_atlas: &mut usize,
         rasterized: &RasterizedGlyph,
     ) -> Glyph {
+        #[cfg(target_os = "trueos")]
+        if let BitmapBuffer::Native(native) = rasterized.buffer {
+            let tex_id = trueos_gl::import_font_sprite(
+                native.window,
+                native.ticket,
+                native.sprite,
+                rasterized.width as u32,
+                rasterized.height as u32,
+            )
+            .expect("native font sprite import failed");
+            let textures = &mut atlas[0].native_textures;
+            if !textures.contains(&tex_id) {
+                textures.push(tex_id);
+            }
+            return Glyph {
+                tex_id,
+                multicolor: false,
+                top: rasterized.top as i16,
+                left: rasterized.left as i16,
+                width: rasterized.width as i16,
+                height: rasterized.height as i16,
+                uv_bot: 0.0,
+                uv_left: 0.0,
+                uv_width: 1.0,
+                uv_height: 1.0,
+            };
+        }
         // At least one atlas is guaranteed to be in the `self.atlas` list; thus
         // the unwrap.
         match atlas[*current_atlas].insert(rasterized, active_tex) {
@@ -297,6 +336,7 @@ impl Atlas {
 
 impl Drop for Atlas {
     fn drop(&mut self) {
+        self.clear();
         unsafe {
             gl::DeleteTextures(1, &self.id);
         }

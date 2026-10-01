@@ -39,6 +39,7 @@ mod config;
 mod daemon;
 mod display;
 mod event;
+mod font;
 mod input;
 mod logging;
 #[cfg(target_os = "macos")]

@@ -1,7 +1,7 @@
 use std::mem::size_of;
 use std::ptr;
 
-use crossfont::RasterizedGlyph;
+use crate::font::RasterizedGlyph;
 use log::info;
 
 use alacritty_terminal::term::cell::Flags;

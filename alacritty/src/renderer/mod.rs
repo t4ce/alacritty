@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 
 #[cfg(not(target_os = "trueos"))]
 use ahash::RandomState;
-use crossfont::Metrics;
+use crate::font::Metrics;
 #[cfg(not(target_os = "trueos"))]
 use glutin::context::ContextApi;
 use glutin::context::{GlContext, PossiblyCurrentContext};

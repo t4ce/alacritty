@@ -60,7 +60,7 @@ pub enum Error {
     WindowCreation(winit::error::OsError),
 
     /// Error dealing with fonts.
-    Font(crossfont::Error),
+    Font(crate::font::Error),
     /// Error requesting a window operation.
     WindowRequest(winit::error::RequestError),
 }
@@ -100,8 +100,8 @@ impl From<winit::error::RequestError> for Error {
     }
 }
 
-impl From<crossfont::Error> for Error {
-    fn from(val: crossfont::Error) -> Self {
+impl From<crate::font::Error> for Error {
+    fn from(val: crate::font::Error) -> Self {
         Error::Font(val)
     }
 }
